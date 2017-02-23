@@ -1908,8 +1908,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
     if forts and (config['parse_pokestops'] or config['parse_gyms']):
         if config['parse_pokestops']:
-            #try to spin any pokestops in range
-            spin_pokestop(api, (step_location[0], step_location[1]), forts)
             stop_ids = [f['id'] for f in forts if f.get('type') == 1]
             if stop_ids:
                 query = (Pokestop
@@ -2070,6 +2068,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
         # a possible speed violation.
         return {
             'count': len(wild_pokemon) + len(forts),
+            'pokestops': pokestops,
             'gyms': gyms,
             'sp_id_list': sp_id_list,
             'bad_scan': True
@@ -2077,6 +2076,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
     return {
         'count': len(wild_pokemon) + len(forts),
+        'pokestops': pokestops,
         'gyms': gyms,
         'sp_id_list': sp_id_list,
         'bad_scan': False

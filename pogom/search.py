@@ -46,6 +46,7 @@ from .utils import now, generate_device_info
 from .transform import get_new_coords, jitter_location
 from .account import check_login, get_tutorial_state, complete_tutorial
 from .captcha import captcha_overseer_thread, handle_captcha
+from .humanaction import check_level, spin_pokestop
 
 from .proxy import get_new_proxy
 
@@ -986,7 +987,9 @@ def search_worker_thread(args, account_queue, account_failures,
                         account_queue.task_done()
                         time.sleep(3)
                         break
-
+                    player_level = check_level(response_dict)
+                    log.debug('Account %s is currently at level %d',
+                              account['username'], player_level)
                     parsed = parse_map(args, response_dict, step_location,
                                        dbq, whq, api, scan_date)
                     scheduler.task_done(status, parsed)
@@ -1015,6 +1018,18 @@ def search_worker_thread(args, account_queue, account_failures,
                                                            account['username'])
                     log.exception('{}. Exception message: {}'.format(
                         status['message'], repr(e)))
+
+                # Try to spin any pokestops in range.
+                if parsed:
+                    for pokestop in parsed['pokestops'].values():
+                        distance = calc_distance(
+                            step_location,
+                            [pokestop['latitude'], pokestop['longitude']])
+                        if distance < 0.038:
+                            spin_pokestop(args, status, api, account,
+                                          account_failures, account_captchas,
+                                          whq, response_dict, step_location,
+                                          pokestop)
 
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:
