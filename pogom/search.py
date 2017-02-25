@@ -45,8 +45,8 @@ from .fakePogoApi import FakePogoApi
 from .utils import now, generate_device_info
 from .transform import get_new_coords, jitter_location
 from .account import check_login, get_tutorial_state, complete_tutorial
-from .captcha import captcha_overseer_thread, handle_captcha
-from .humanaction import check_level, spin_pokestop
+from .captcha import captcha_overseer_thread, handle_captcha, check_level, \
+                     handle_pokestop
 
 from .proxy import get_new_proxy
 
@@ -1022,14 +1022,13 @@ def search_worker_thread(args, account_queue, account_failures,
                 # Try to spin any pokestops in range.
                 if parsed:
                     for pokestop in parsed['pokestops'].values():
+                        log.debug('Looking at pokestop: %s', pokestop)
                         distance = calc_distance(
                             step_location,
                             [pokestop['latitude'], pokestop['longitude']])
                         if distance < 0.038:
-                            spin_pokestop(args, status, api, account,
-                                          account_failures, account_captchas,
-                                          whq, response_dict, step_location,
-                                          pokestop)
+                            handle_pokestop(status, api, step_location,
+                                            pokestop)
 
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:
