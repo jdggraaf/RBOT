@@ -45,7 +45,7 @@ from .fakePogoApi import FakePogoApi
 from .utils import now, generate_device_info
 from .transform import get_new_coords, jitter_location
 from .account import check_login, get_tutorial_state, complete_tutorial, \
-                     check_level, handle_pokestop
+                     parse_account_stats, handle_pokestop
 from .captcha import captcha_overseer_thread, handle_captcha
 
 from .proxy import get_new_proxy
@@ -365,6 +365,12 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     to prevent accounts from being cycled through too quickly.
     '''
     for i, account in enumerate(args.accounts):
+        account['level'] = 0
+        account['items'] = []
+        account['last_update'] = datetime.utcnow()
+        # account['last_active'] = datetime.utcnow()
+        # account['last_location'] = None
+        account['used_pokestops'] = []
         account_queue.put(account)
 
     # Create a list for failed accounts.
@@ -961,6 +967,10 @@ def search_worker_thread(args, account_queue, account_failures,
                 status['longitude'] = step_location[1]
                 dbq.put((WorkerStatus, {0: WorkerStatus.db_format(status)}))
 
+                # Account information - used in captchas and account functions.
+                account['last_active'] = datetime.utcnow()
+                account['last_location'] = step_location
+
                 # Nothing back. Mark it up, sleep, carry on.
                 if not response_dict:
                     status['fail'] += 1
@@ -976,7 +986,7 @@ def search_worker_thread(args, account_queue, account_failures,
                     captcha = handle_captcha(args, status, api, account,
                                              account_failures,
                                              account_captchas, whq,
-                                             response_dict, step_location)
+                                             response_dict)
                     if captcha is not None and captcha:
                         # Make another request for the same location
                         # since the previous one was captcha'd.
@@ -987,9 +997,9 @@ def search_worker_thread(args, account_queue, account_failures,
                         account_queue.task_done()
                         time.sleep(3)
                         break
-                    player_level = check_level(response_dict)
-                    log.debug('Account %s is currently at level %d',
-                              account['username'], player_level)
+
+                    parse_account_stats(response_dict, account)
+
                     parsed = parse_map(args, response_dict, step_location,
                                        dbq, whq, api, scan_date)
                     scheduler.task_done(status, parsed)
@@ -1021,9 +1031,8 @@ def search_worker_thread(args, account_queue, account_failures,
 
                 # Try to spin any pokestops within maximum range (38 meters).
                 if parsed:
-                    log.debug(parsed['pokestops'])
                     for pokestop in parsed['pokestops'].values():
-                        handle_pokestop(status, api, step_location, pokestop)
+                        handle_pokestop(status, api, account, pokestop)
 
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:

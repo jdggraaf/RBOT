@@ -177,7 +177,7 @@ def captcha_solver_thread(args, account_queue, account_captchas, hash_key,
 
 
 def handle_captcha(args, status, api, account, account_failures,
-                   account_captchas, whq, response_dict, step_location):
+                   account_captchas, whq, response_dict):
     try:
         captcha_url = response_dict['responses'][
             'CHECK_CHALLENGE']['challenge_url']
@@ -217,8 +217,6 @@ def handle_captcha(args, status, api, account, account_failures,
                                      'Waiting for token.').format(
                                         account['username'])
                 log.warning(status['message'])
-                account['last_active'] = datetime.utcnow()
-                account['last_location'] = step_location
                 account_captchas.append((status, account, captcha_url))
                 if args.webhooks:
                     wh_message = {'status_name': args.status_name,
