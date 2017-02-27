@@ -9,28 +9,6 @@ from pgoapi.exceptions import AuthException
 
 log = logging.getLogger(__name__)
 
-SPIN_REQUEST_RESULT_SUCCESS = 1
-SPIN_REQUEST_RESULT_OUT_OF_RANGE = 2
-SPIN_REQUEST_RESULT_IN_COOLDOWN_PERIOD = 3
-SPIN_REQUEST_RESULT_INVENTORY_FULL = 4
-SPIN_REQUEST_RESULT_MAXIMUM_REACHED = 5
-
-MAX_DISTANCE_FORT_IS_REACHABLE = 38     # In meters.
-MAX_DISTANCE_POKEMON_IS_REACHABLE = 48  # In meters.
-
-ITEM_POKEBALL = 1
-ITEM_GREATBALL = 2
-ITEM_ULTRABALL = 3
-ITEM_RAZZBERRY = 701
-ITEM_POTION = 101
-ITEM_SUPER_POTION = 102
-ITEM_HYPER_POTION = 103
-ITEM_MAX_POTION = 104
-ITEM_REVIVE = 201
-ITEM_MAX_REVIVE = 202
-POTIONS = [ITEM_POTION, ITEM_SUPER_POTION, ITEM_HYPER_POTION,
-           ITEM_MAX_POTION, ITEM_REVIVE, ITEM_MAX_REVIVE]
-
 
 class TooManyLoginAttempts(Exception):
     pass
@@ -224,11 +202,11 @@ def complete_tutorial(api, account, tutorial_state):
     return True
 
 
-def spin_pokestop(status, api, location, pokestop):
+def handle_pokestop(status, api, location, pokestop):
 
     status['message'] = 'Trying to drop a Pokeball...'
     log.info(status['message'])
-    time.sleep(10)
+    time.sleep(random.uniform(3.0, 4.0))
     req = api.create_request()
     response_dict = req.recycle_inventory_item(item_id=1, count=1)
     response_dict = req.call()
@@ -244,52 +222,48 @@ def spin_pokestop(status, api, location, pokestop):
         else:
             status['message'] = 'Unable to drop Pokeball.'
             log.warning(status['message'])
-    time.sleep(5)
-    req = api.create_request()
-    spin_response = req.fort_search(fort_id=pokestop['id'],
-                                    fort_latitude=pokestop['latitude'],
-                                    fort_longitude=pokestop['longitude'],
-                                    player_latitude=location['latitude'],
-                                    player_longitude=location['longitude'])
 
-    spin_response = req.check_challenge()
-    spin_response = req.get_hatched_eggs()
-    spin_response = req.get_inventory()
-    spin_response = req.check_awarded_badges()
-    spin_response = req.download_settings()
-    spin_response = req.get_buddy_walked()
-    spin_response = req.call()
-    # TODO: remove
-    log.debug(spin_response)
-
-    # Check for captcha
-    captcha_url = spin_response['responses'][
-        'CHECK_CHALLENGE']['challenge_url']
-    if len(captcha_url) > 1:
-        status['message'] = 'Captcha encountered when spinning pokestop.'
+    attempts = 3
+    while attempts > 0:
+        status['message'] = 'Spinning Pokestop ID: {}'.format(
+                                pokestop['pokestop_id'])
         log.info(status['message'])
-        return False
-    if ('responses' in spin_response) and (
-            'FORT_SEARCH' in response_dict['responses']):
-            spin_details = response_dict['responses']['FORT_SEARCH']
-            spin_result = spin_details.get('result', -1)
-            if (spin_result == SPIN_REQUEST_RESULT_SUCCESS) or (
-                    spin_result == SPIN_REQUEST_RESULT_INVENTORY_FULL):
-                experience_awarded = spin_details.get('experience_awarded', 0)
-                if experience_awarded:
-                    log.info("Spun pokestop got response data!")
-                    return True
-                else:
-                    log.info('Found nothing in pokestop')
-            elif spin_result == SPIN_REQUEST_RESULT_OUT_OF_RANGE:
-                log.info("Pokestop out of range.")
-            elif spin_result == SPIN_REQUEST_RESULT_IN_COOLDOWN_PERIOD:
-                log.info("Pokestop is on cooldown.")
-            elif spin_result == SPIN_REQUEST_RESULT_MAXIMUM_REACHED:
-                log.info("Pokestop maximum daily quota reached.")
+        time.sleep(random.uniform(2, 3))
+        spin_response = request_fort_search(api, pokestop, location)
+
+        # Check for captcha
+        captcha_url = spin_response['responses'][
+            'CHECK_CHALLENGE']['challenge_url']
+        if len(captcha_url) > 1:
+            status['message'] = 'Captcha encountered when spinning Pokestop.'
+            log.info(status['message'])
+            return False
+
+        fort_search = spin_response['responses'].get('FORT_SEARCH', {})
+        if 'result' in fort_search:
+
+            spin_result = fort_search.get('result', -1)
+            if spin_result == 1:
+                xp_awarded = fort_search.get('experience_awarded', 0)
+                if xp_awarded > 0:
+                    log.info('Spun Pokestop and got %s XP!', xp_awarded)
+                return True
+            elif spin_result == 2:
+                log.warning('Pokestop out of range.')
+                break
+            elif spin_result == 3:
+                log.warning('Pokestop is on cooldown.')
+                break
+            elif spin_result == 4:
+                log.warning('Inventory is full.')
+                break
+            elif spin_result == 5:
+                log.warning('Pokestop daily quota reached.')
+                break
             else:
-                log.warning("Unable to spin Pokestop, unknown return: %s",
+                log.warning('Unable to spin Pokestop, unknown return: %s',
                             spin_result)
+        attempts -= 1
     return False
 
 
@@ -297,11 +271,37 @@ def check_level(response_dict):
     inventory_items = response_dict['responses'].get('GET_INVENTORY', {}).get(
         'inventory_delta', {}).get(
         'inventory_items', [])
-    log.debug(inventory_items)
-    player_stats = [item['inventory_item_data']['player_stats']
-                    for item in inventory_items
-                    if 'player_stats' in item.get('inventory_item_data', {})]
+    player_stats = []
+    player_items = []
+    for item in inventory_items:
+        item_data = item.get('inventory_item_data', {})
+        if 'player_stats' in item_data:
+            player_stats.append(item_data['player_stats'])
+        elif 'item' in item_data:
+            item_id = item_data['item'].get('item_id', 0)
+            item_count = item_data['item'].get('count', 0)
+            log.debug("Found item: %s - count: %s", item_id, item_count)
+            player_items.append(item_data['item'])
+
     if len(player_stats) > 0:
         return player_stats[0].get('level', 0)
 
     return -1
+
+
+def request_fort_search(api, pokestop, location):
+    req = api.create_request()
+    response = req.fort_search(fort_id=pokestop['pokestop_id'],
+                               fort_latitude=pokestop['latitude'],
+                               fort_longitude=pokestop['longitude'],
+                               player_latitude=location[0],
+                               player_longitude=location[1])
+    response = req.check_challenge()
+    response = req.get_hatched_eggs()
+    response = req.get_inventory()
+    response = req.check_awarded_badges()
+    response = req.download_settings()
+    response = req.get_buddy_walked()
+    response = req.call()
+
+    return response

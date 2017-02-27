@@ -31,7 +31,7 @@ from .utils import get_pokemon_name, get_pokemon_rarity, get_pokemon_types, \
     get_move_name, get_move_damage, get_move_energy, get_move_type
 from .transform import transform_from_wgs_to_gcj, get_new_coords
 from .customLog import printPokemon
-from .humanaction import spin_pokestop
+
 log = logging.getLogger(__name__)
 
 args = get_args()
@@ -1681,6 +1681,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
               api, now_date):
     pokemon = {}
     pokestops = {}
+    pokestops_in_range = {}
     gyms = {}
     skipped = 0
     stopsskipped = 0
@@ -1915,6 +1916,15 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
         for f in forts:
             if config['parse_pokestops'] and f.get('type') == 1:  # Pokestops.
+                distance = 0.038
+                pokestop_loc = (f['latitude'], f['longitude'])
+                if in_radius(step_location, pokestop_loc, distance):
+                    log.debug('Pokestop: %s is in range.', f['id'])
+                    pokestops_in_range[f['id']] = {
+                        'pokestop_id': f['id'],
+                        'latitude': f['latitude'],
+                        'longitude': f['longitude']
+                    }
                 if 'active_fort_modifier' in f:
                     lure_expiration = (datetime.utcfromtimestamp(
                         f['last_modified_timestamp_ms'] / 1000.0) +
@@ -2071,7 +2081,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
     return {
         'count': len(wild_pokemon) + len(forts),
-        'pokestops': pokestops,
+        'pokestops': pokestops_in_range,
         'gyms': gyms,
         'sp_id_list': sp_id_list,
         'bad_scan': False
