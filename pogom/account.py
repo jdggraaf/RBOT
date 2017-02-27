@@ -328,14 +328,13 @@ def parse_account_stats(response_dict, account):
         if(account['level'] > 0) and (player_level > account['level']):
             log.info('Account %s leveled up to: %d',
                      account['username'], player_level)
-
+        else:
+            log.debug('Account %s is currently at level %d',
+                      account['username'], player_level)
         account['level'] = player_level
         account['items'] = player_items
         account['last_update'] = datetime.utcnow()
         account['used_pokestops'] = []
-        log.debug('Account %s is currently at level %d',
-                  account['username'], player_level)
-
         return True
 
     return False
