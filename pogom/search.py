@@ -365,7 +365,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     to prevent accounts from being cycled through too quickly.
     '''
     for i, account in enumerate(args.accounts):
-        account['level'] = 0
+        account['level'] = 1
         account['items'] = []
         # account['last_active'] = datetime.utcnow()
         # account['last_location'] = None
@@ -997,7 +997,8 @@ def search_worker_thread(args, account_queue, account_failures,
                         time.sleep(3)
                         break
 
-                    parse_account_stats(response_dict, account)
+                    if args.account_max_level > 0:
+                        parse_account_stats(args, response_dict, account)
 
                     parsed = parse_map(args, response_dict, step_location,
                                        dbq, whq, api, scan_date)
@@ -1029,7 +1030,7 @@ def search_worker_thread(args, account_queue, account_failures,
                         status['message'], repr(e)))
 
                 # Try to spin any pokestops within maximum range (38 meters).
-                if parsed:
+                if parsed and account['level'] < args.account_max_level:
                     for pokestop in parsed['pokestops'].values():
                         handle_pokestop(status, api, account, pokestop)
 

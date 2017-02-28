@@ -5,8 +5,6 @@ import logging
 import time
 import random
 
-from datetime import datetime
-
 from pgoapi.exceptions import AuthException
 
 log = logging.getLogger(__name__)
@@ -204,13 +202,51 @@ def complete_tutorial(api, account, tutorial_state):
     return True
 
 
+def parse_account_stats(args, response_dict, account):
+    # Re-enable pokestops that have been used.
+    used_pokestops = dict(account['used_pokestops'])
+    for pokestop_id in account['used_pokestops']:
+        last_attempt = account['used_pokestops'][pokestop_id]
+        if (last_attempt + args.pokestop_refresh_time) < time.time():
+            del used_pokestops[pokestop_id]
+    account['used_pokestops'] = used_pokestops
+
+    inventory_items = response_dict['responses'].get('GET_INVENTORY', {}).get(
+        'inventory_delta', {}).get('inventory_items', [])
+    player_stats = {}
+    player_items = {}
+    for item in inventory_items:
+        item_data = item.get('inventory_item_data', {})
+        if 'player_stats' in item_data:
+            player_stats = item_data['player_stats']
+        elif 'item' in item_data:
+            item_id = item_data['item'].get('item_id', 0)
+            item_count = item_data['item'].get('count', 0)
+            player_items[item_id] = item_count
+
+    log.debug('Account %s items: %s', account['username'], player_items)
+    player_level = player_stats.get('level', 0)
+    if player_level > 0:
+        if player_level > account['level']:
+            log.info('Account %s leveled up to: %d',
+                     account['username'], player_level)
+        else:
+            log.debug('Account %s is currently at level %d',
+                      account['username'], player_level)
+        account['level'] = player_level
+        account['items'] = player_items
+        return True
+
+    return False
+
+
 def recycle_items(status, api, account):
     pokeball_count = account['items'].get(1, 0)
     potion_count = account['items'].get(101, 0)
 
     if pokeball_count > 50:
         drop_count = pokeball_count - 20 - random.randint(5, 10)
-        status['message'] = 'Trying to drop {} Pokeballs.'.format(drop_count)
+        status['message'] = 'Dropping {} Pokeballs.'.format(drop_count)
         log.info(status['message'])
         time.sleep(random.uniform(4.0, 6.0))
         new_count = request_recycle_item(api, 1, drop_count)
@@ -222,7 +258,7 @@ def recycle_items(status, api, account):
 
     if potion_count > 30:
         drop_count = potion_count - 10 - random.randint(5, 10)
-        status['message'] = 'Trying to drop {} Potion.'.format(drop_count)
+        status['message'] = 'Dropping {} Potions.'.format(drop_count)
         log.info(status['message'])
         time.sleep(random.uniform(4.0, 6.0))
         new_count = request_recycle_item(api, 101, drop_count)
@@ -269,7 +305,7 @@ def handle_pokestop(status, api, account, pokestop):
         captcha_url = spin_response['responses'][
             'CHECK_CHALLENGE']['challenge_url']
         if len(captcha_url) > 1:
-            status['message'] = 'Captcha encountered when spinning Pokestop.'
+            status['message'] = 'Captcha encountered while spinning Pokestop.'
             log.info(status['message'])
             return False
 
@@ -279,8 +315,10 @@ def handle_pokestop(status, api, account, pokestop):
             spun_pokestop = True
             if spin_result == 1:
                 xp_awarded = fort_search.get('experience_awarded', 0)
-                if xp_awarded > 0:
-                    log.info('Spun Pokestop and got %s XP!', xp_awarded)
+                status['message'] = (
+                    'Account {} spun Pokestop and received {} XP.').format(
+                        account['username'], xp_awarded)
+                log.info(status['message'])
             elif spin_result == 2:
                 log.warning('Pokestop out of range.')
             elif spin_result == 3:
@@ -299,43 +337,6 @@ def handle_pokestop(status, api, account, pokestop):
                 return True
 
         attempts -= 1
-    return False
-
-
-def parse_account_stats(response_dict, account):
-    if account['level'] > 0:
-        used_pokestops = account['used_pokestops']
-        for pokestop_id in account['used_pokestops']:
-            last_attempt = account['used_pokestops'][pokestop_id]
-            if (last_attempt + 240) < time.time():
-                del used_pokestops[pokestop_id]
-
-    inventory_items = response_dict['responses'].get('GET_INVENTORY', {}).get(
-        'inventory_delta', {}).get('inventory_items', [])
-    player_stats = {}
-    player_items = {}
-    for item in inventory_items:
-        item_data = item.get('inventory_item_data', {})
-        if 'player_stats' in item_data:
-            player_stats = item_data['player_stats']
-        elif 'item' in item_data:
-            item_id = item_data['item'].get('item_id', 0)
-            item_count = item_data['item'].get('count', 0)
-            player_items[item_id] = item_count
-            log.debug("Parsed item: %s - count: %d", item_id, item_count)
-
-    player_level = player_stats.get('level', 0)
-    if player_level > 0:
-        if(account['level'] > 0) and (player_level > account['level']):
-            log.info('Account %s leveled up to: %d',
-                     account['username'], player_level)
-        else:
-            log.debug('Account %s is currently at level %d',
-                      account['username'], player_level)
-        account['level'] = player_level
-        account['items'] = player_items
-        return True
-
     return False
 
 

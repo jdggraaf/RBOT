@@ -148,6 +148,12 @@ def get_args():
                         'captcha solving. On timeout, if enabled, 2Captcha ' +
                         'will be used to solve captcha. Default is 0.',
                         type=int, default=0)
+    parser.add_argument('-prt', '--pokestop-refresh-time',
+                        help='Time until Pokestops can be used again.',
+                        type=int, default=240)
+    parser.add_argument('-aml', '--account-max-level',
+                        help='Spin Pokestops until this level is reached.',
+                        type=int, default=4)
     parser.add_argument('-ed', '--encounter-delay',
                         help=('Time delay between encounter pokemon ' +
                               'in scan threads.'),
