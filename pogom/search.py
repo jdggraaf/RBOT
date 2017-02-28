@@ -1030,7 +1030,8 @@ def search_worker_thread(args, account_queue, account_failures,
                         status['message'], repr(e)))
 
                 # Try to spin any pokestops within maximum range (38 meters).
-                if parsed and account['level'] < args.account_max_level:
+                if account['level'] < args.account_max_level and (
+                   'pokestops' in parsed):
                     for pokestop in parsed['pokestops'].values():
                         handle_pokestop(status, api, account, pokestop)
 
