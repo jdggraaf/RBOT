@@ -295,7 +295,7 @@ def handle_pokestop(status, api, account, pokestop):
                 spun_pokestop = False
 
             if spun_pokestop:
-                account['used_pokestops'].append(pokestop_id)
+                account['used_pokestops'][pokestop_id] = time.time()
                 return True
 
         attempts -= 1
@@ -304,10 +304,11 @@ def handle_pokestop(status, api, account, pokestop):
 
 def parse_account_stats(response_dict, account):
     if account['level'] > 0:
-        last_update = account['last_update']
-        elasped_time = (datetime.utcnow() - last_update).total_seconds()
-        if elasped_time < 300:
-            return True
+        used_pokestops = account['used_pokestops']
+        for pokestop_id in account['used_pokestops']:
+            last_attempt = account['used_pokestops'][pokestop_id]
+            if (last_attempt + 240) < time.time():
+                del used_pokestops[pokestop_id]
 
     inventory_items = response_dict['responses'].get('GET_INVENTORY', {}).get(
         'inventory_delta', {}).get('inventory_items', [])
@@ -333,8 +334,6 @@ def parse_account_stats(response_dict, account):
                       account['username'], player_level)
         account['level'] = player_level
         account['items'] = player_items
-        account['last_update'] = datetime.utcnow()
-        account['used_pokestops'] = []
         return True
 
     return False

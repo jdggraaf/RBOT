@@ -367,10 +367,9 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     for i, account in enumerate(args.accounts):
         account['level'] = 0
         account['items'] = []
-        account['last_update'] = datetime.utcnow()
         # account['last_active'] = datetime.utcnow()
         # account['last_location'] = None
-        account['used_pokestops'] = []
+        account['used_pokestops'] = {}
         account_queue.put(account)
 
     # Create a list for failed accounts.
