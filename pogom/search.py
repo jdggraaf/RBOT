@@ -1031,7 +1031,7 @@ def search_worker_thread(args, account_queue, account_failures,
 
                 # Try to spin any pokestops within maximum range (38 meters).
                 if account['level'] < args.account_max_level and parsed:
-                    for pokestop in parsed['pokestops'].values():
+                    for pokestop in parsed.get('pokestops', {}).values():
                         handle_pokestop(status, api, account, pokestop)
 
                 # Get detailed information about gyms.
