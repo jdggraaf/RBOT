@@ -1032,7 +1032,16 @@ def search_worker_thread(args, account_queue, account_failures,
                 # Try to spin any pokestops within maximum range (38 meters).
                 if account['level'] < args.account_max_level and parsed:
                     for pokestop in parsed.get('pokestops', {}).values():
-                        handle_pokestop(status, api, account, pokestop)
+                        try:
+                            handle_pokestop(status, api, account, pokestop)
+                        except Exception as e:
+                            status['message'] = ('Failed to spin Pokestop ' +
+                                                 '{} at {:6f},{:6f}. ').format(
+                                                    pokestop['pokestop_id'],
+                                                    step_location[0],
+                                                    step_location[1])
+                            log.warning('%s Exception: %s', status['message'],
+                                        repr(e))
 
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:
