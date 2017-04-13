@@ -1779,9 +1779,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
     # Consolidate the individual lists in each cell into two lists of Pokemon
     # and a list of forts.
     cells = map_dict['responses']['GET_MAP_OBJECTS']['map_cells']
-    # Get the level for the pokestop spin in any case delete inventory
-    if args.complete_tutorial and config['parse_pokestops']:
-        level = get_player_level(map_dict)
     if 'GET_INVENTORY' in map_dict['responses']:
         del map_dict['responses']['GET_INVENTORY']
     for i, cell in enumerate(cells):
