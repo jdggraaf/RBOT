@@ -202,6 +202,20 @@ def complete_tutorial(api, account, tutorial_state):
     return True
 
 
+def get_player_level(map_dict):
+    inventory_items = map_dict['responses'].get(
+        'GET_INVENTORY', {}).get(
+        'inventory_delta', {}).get(
+        'inventory_items', [])
+    player_stats = [item['inventory_item_data']['player_stats']
+                    for item in inventory_items
+                    if 'player_stats' in item.get(
+                    'inventory_item_data', {})]
+    if len(player_stats) > 0:
+        player_level = player_stats[0].get('level', 1)
+        return player_level
+
+
 def parse_account_stats(args, response_dict, account):
     # Re-enable pokestops that have been used.
     used_pokestops = dict(account['used_pokestops'])
