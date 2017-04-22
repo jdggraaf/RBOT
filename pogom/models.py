@@ -33,6 +33,7 @@ from .utils import get_pokemon_name, get_pokemon_rarity, get_pokemon_types, \
     clear_dict_response
 from .transform import transform_from_wgs_to_gcj, get_new_coords
 from .customLog import printPokemon
+from .account import get_player_level
 log = logging.getLogger(__name__)
 
 args = get_args()
@@ -1785,7 +1786,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
     cells = map_dict['responses']['GET_MAP_OBJECTS']['map_cells']
     # Get the level for the pokestop spin, and to send to webhook.
     level = get_player_level(map_dict)
-    
+
     # Helping out the GC.
     if 'GET_INVENTORY' in map_dict['responses']:
         del map_dict['responses']['GET_INVENTORY']

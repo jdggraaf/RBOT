@@ -214,6 +214,7 @@ def get_player_level(map_dict):
     if len(player_stats) > 0:
         player_level = player_stats[0].get('level', 1)
         return player_level
+    return 0
 
 
 def parse_account_stats(args, response_dict, account):
