@@ -330,10 +330,9 @@ def handle_pokestop(status, api, account, pokestop):
             spun_pokestop = True
             if spin_result == 1:
                 xp_awarded = fort_search.get('experience_awarded', 0)
-                status['message'] = (
-                    'Account {} spun Pokestop and received {} XP.').format(
-                        account['username'], xp_awarded)
-                log.info(status['message'])
+                status['message'] = ('Account {} (lvl {}) spun Pokestop and ' +
+                                     'received {} XP.').format(
+                    account['username'], account['level'], xp_awarded)
             elif spin_result == 2:
                 log.warning('Pokestop out of range.')
             elif spin_result == 3:
