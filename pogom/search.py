@@ -44,8 +44,8 @@ from .models import parse_map, GymDetails, parse_gyms, MainWorker, WorkerStatus
 from .fakePogoApi import FakePogoApi
 from .utils import now, generate_device_info, clear_dict_response
 from .transform import get_new_coords, jitter_location
-from .account import check_login, get_tutorial_state, complete_tutorial, \
-                     parse_account_stats, handle_pokestop, get_player_state
+from .account import check_login, get_player_state, complete_tutorial, \
+                     parse_account_stats, handle_pokestop
 from .captcha import captcha_overseer_thread, handle_captcha
 
 from .proxy import get_new_proxy
@@ -755,9 +755,6 @@ def search_worker_thread(args, account_queue, account_failures,
 
             status['starttime'] = now()
 
-            # Track per loop.
-            first_login = True
-
             # Make sure the scheduler is done for valid locations
             while not scheduler.ready:
                 time.sleep(1)
@@ -768,6 +765,8 @@ def search_worker_thread(args, account_queue, account_failures,
 
             # Get an account.
             account = account_queue.get()
+            # Track per loop.
+            account['first_login'] = True
             status.update(WorkerStatus.get_worker(
                 account['username'], scheduler.scan_location))
             status['message'] = 'Switching to account {}.'.format(
@@ -947,9 +946,7 @@ def search_worker_thread(args, account_queue, account_failures,
 
                 # Only run this when it's the account's first login, after
                 # check_login().
-                if first_login:
-                    first_login = False
-
+                if account['first_login']:
                     if get_player_state(api, account):
                         if account['warning']:
                             log.warning('Account %s has received a warning.',
@@ -1013,7 +1010,7 @@ def search_worker_thread(args, account_queue, account_failures,
                         break
 
                     if args.account_max_level > 0:
-                        parse_account_stats(args, response_dict, account)
+                        parse_account_stats(args, api, response_dict, account)
 
                     parsed = parse_map(args, response_dict, step_location,
                                        dbq, whq, api, scan_date)
@@ -1062,6 +1059,8 @@ def search_worker_thread(args, account_queue, account_failures,
                             log.warning('%s Exception: %s', status['message'],
                                         repr(e))
 
+                if account['first_login']:
+                    account['first_login'] = False
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:
                     # Build a list of gyms to update.

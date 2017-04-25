@@ -220,7 +220,7 @@ def get_player_level(map_dict):
     return 0
 
 
-def parse_account_stats(args, response_dict, account):
+def parse_account_stats(args, api, response_dict, account):
     # Re-enable pokestops that have been used.
     used_pokestops = dict(account['used_pokestops'])
     for pokestop_id in account['used_pokestops']:
@@ -228,6 +228,16 @@ def parse_account_stats(args, response_dict, account):
         if (last_attempt + args.pokestop_refresh_time) < time.time():
             del used_pokestops[pokestop_id]
     account['used_pokestops'] = used_pokestops
+
+    # Check if there are level up rewards to claim.
+    if account['first_login']:
+        time.sleep(random.uniform(2.0, 3.0))
+        if request_level_up_rewards(api, account):
+            log.info('Account %s collected its level up rewards.',
+                     account['username'])
+        else:
+            log.info('Account %s already collected level up rewards.',
+                     account['username'])
 
     inventory_items = response_dict['responses'].get(
         'GET_INVENTORY', {}).get(
@@ -248,8 +258,15 @@ def parse_account_stats(args, response_dict, account):
     player_level = player_stats.get('level', 0)
     if player_level > 0:
         if player_level > account['level']:
-            log.info('Account %s leveled up to: %d',
+            log.info('Account %s has leveled up! Current level: %d',
                      account['username'], player_level)
+            time.sleep(random.uniform(2.0, 3.0))
+            if request_level_up_rewards(api, account):
+                log.debug('Account %s collected its level up rewards.',
+                          account['username'])
+            else:
+                log.warning('Account %s failed to collect level up rewards.',
+                            account['username'])
         else:
             log.debug('Account %s is currently at level %d',
                       account['username'], player_level)
@@ -389,21 +406,17 @@ def request_recycle_item(api, item_id, amount):
 
 
 # Send LevelUpRewards request to check for and accept level up rewards.
-# @Returns
-# 0: UNSET
-# 1: SUCCESS
-# 2: AWARDED_ALREADY
 def request_level_up_rewards(api, account):
-    log.info('Check level up rewards for account %s.', account['username'])
-    time.sleep(random.uniform(2, 3))
     try:
         req = api.create_request()
-        req.level_up_rewards(level=account['level'])
-        req.check_challenge()
+        res = req.level_up_rewards(level=account['level'])
+        res = req.check_challenge()
         res = req.call()
-        if ('responses' in res) and ('LEVEL_UP_REWARDS' in res['responses']):
-            reward_details = res['responses']['LEVEL_UP_REWARDS']
-            return reward_details.get('result', -1)
+
+        rewards = res['responses'].get('LEVEL_UP_REWARDS', {})
+
+        if rewards.get('result', 0):
+            return True
 
     except Exception as e:
         log.warning('Exception while requesting level up rewards: %s', repr(e))
