@@ -61,6 +61,7 @@ def check_login(args, account, api, position, proxy_url):
     time.sleep(20)
 
 
+# XXX: unused
 # Check if all important tutorial steps have been completed.
 # API argument needs to be a logged in API instance.
 def get_tutorial_state(api, account):
@@ -83,7 +84,8 @@ def get_tutorial_state(api, account):
 # Complete minimal tutorial steps.
 # API argument needs to be a logged in API instance.
 # TODO: Check if game client bundles these requests, or does them separately.
-def complete_tutorial(api, account, tutorial_state):
+def complete_tutorial(api, account):
+    tutorial_state = account['tutorials']
     if 0 not in tutorial_state:
         time.sleep(random.uniform(1, 5))
         request = api.create_request()
@@ -391,7 +393,7 @@ def request_recycle_item(api, item_id, amount):
 # 0: UNSET
 # 1: SUCCESS
 # 2: AWARDED_ALREADY
-def level_up_rewards_request(api, account):
+def request_level_up_rewards(api, account):
     log.info('Check level up rewards for account %s.', account['username'])
     time.sleep(random.uniform(2, 3))
     try:
@@ -405,5 +407,32 @@ def level_up_rewards_request(api, account):
 
     except Exception as e:
         log.warning('Exception while requesting level up rewards: %s', repr(e))
+
+    return False
+
+
+def get_player_state(api, account):
+    try:
+        req = api.create_request()
+        req.get_player(
+            player_locale={
+                'country': 'US',
+                'language': 'en',
+                'timezone': 'America/Los_Angeles'})
+        res = req.check_challenge()
+        res = req.call()
+
+        get_player = res.get('responses', {}).get('GET_PLAYER', {})
+        warning_state = get_player.get('warn', None)
+        tutorial_state = get_player.get(
+            'player_data', {}).get('tutorial_state', [])
+        account['warning'] = warning_state
+        account['tutorials'] = tutorial_state
+        time.sleep(random.uniform(1, 3))
+
+        return True
+
+    except Exception as e:
+        log.warning('Exception while getting player state: %s', repr(e))
 
     return False

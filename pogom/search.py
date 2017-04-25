@@ -45,7 +45,7 @@ from .fakePogoApi import FakePogoApi
 from .utils import now, generate_device_info, clear_dict_response
 from .transform import get_new_coords, jitter_location
 from .account import check_login, get_tutorial_state, complete_tutorial, \
-                     parse_account_stats, handle_pokestop
+                     parse_account_stats, handle_pokestop, get_player_state
 from .captcha import captcha_overseer_thread, handle_captcha
 
 from .proxy import get_new_proxy
@@ -365,6 +365,8 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     to prevent accounts from being cycled through too quickly.
     '''
     for i, account in enumerate(args.accounts):
+        account['warning'] = None
+        account['tutorials'] = []
         account['level'] = 1
         account['items'] = []
         # account['last_active'] = datetime.utcnow()
@@ -948,18 +950,20 @@ def search_worker_thread(args, account_queue, account_failures,
                 if first_login:
                     first_login = False
 
-                    # Check tutorial completion.
-                    if args.complete_tutorial:
-                        tutorial_state = get_tutorial_state(api, account)
-
-                        if not all(x in tutorial_state
-                                   for x in (0, 1, 3, 4, 7)):
-                            log.info('Completing tutorial steps for %s.',
-                                     account['username'])
-                            complete_tutorial(api, account, tutorial_state)
-                        else:
-                            log.info('Account %s already completed tutorial.',
-                                     account['username'])
+                    if get_player_state(api, account):
+                        if account['warning']:
+                            log.warning('Account %s has received a warning.',
+                                        account['username'])
+                        # Check tutorial completion.
+                        if args.complete_tutorial:
+                            if not all(x in account['tutorials']
+                                       for x in (0, 1, 3, 4, 7)):
+                                log.info('Completing tutorial steps for %s.',
+                                         account['username'])
+                                complete_tutorial(api, account)
+                            else:
+                                log.info('Account %s has already completed ' +
+                                         'the tutorial.', account['username'])
 
                 # Putting this message after the check_login so the messages
                 # aren't out of order.
