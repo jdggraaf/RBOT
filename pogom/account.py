@@ -217,6 +217,7 @@ def get_player_level(map_dict):
     if len(player_stats) > 0:
         player_level = player_stats[0].get('level', 1)
         return player_level
+
     return 0
 
 
