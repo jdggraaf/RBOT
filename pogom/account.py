@@ -5,7 +5,7 @@ import logging
 import time
 import random
 
-from pgoapi.exceptions import AuthException
+from pgoapi.exceptions import AuthException, BannedAccountException
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +41,11 @@ def check_login(args, account, api, position, proxy_url):
                     provider=account['auth_service'],
                     username=account['username'],
                     password=account['password'])
+            break
+        except BannedAccountException:
+            log.error('Account %s is banned from Pokemon Go.',
+                      account['username'])
+            time.sleep(args.login_delay)
             break
         except AuthException:
             num_tries += 1
@@ -230,8 +235,14 @@ def parse_account_stats(args, api, response_dict, account):
             del used_pokestops[pokestop_id]
     account['used_pokestops'] = used_pokestops
 
-    # Check if there are level up rewards to claim.
     if account['first_login']:
+        # Check if account is banned.
+        status_code = response_dict.get('status_code', -1)
+        if status_code == 3:
+            account['banned'] = True
+            log.warning('Account %s is probably banned.', account['username'])
+
+        # Check if there are level up rewards to claim.
         time.sleep(random.uniform(2.0, 3.0))
         if request_level_up_rewards(api, account):
             log.info('Account %s collected its level up rewards.',
@@ -240,6 +251,7 @@ def parse_account_stats(args, api, response_dict, account):
             log.info('Account %s already collected level up rewards.',
                      account['username'])
 
+    # Parse inventory items into account.
     inventory_items = response_dict['responses'].get(
         'GET_INVENTORY', {}).get(
         'inventory_delta', {}).get(
@@ -438,9 +450,11 @@ def get_player_state(api, account):
 
         get_player = res.get('responses', {}).get('GET_PLAYER', {})
         warning_state = get_player.get('warn', None)
-        tutorial_state = get_player.get(
-            'player_data', {}).get('tutorial_state', [])
+        banned_state = get_player.get('banned', False)
+        player_data = get_player.get('player_data', {})
+        tutorial_state = player_data.get('tutorial_state', [])
         account['warning'] = warning_state
+        account['banned'] = banned_state
         account['tutorials'] = tutorial_state
         time.sleep(random.uniform(1, 3))
 

@@ -366,6 +366,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     '''
     for i, account in enumerate(args.accounts):
         account['warning'] = None
+        account['banned'] = False
         account['tutorials'] = []
         account['level'] = 1
         account['items'] = []
@@ -459,6 +460,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         threadStatus[workerId] = {
             'type': 'Worker',
             'message': 'Creating thread...',
+            'account': None,
             'success': 0,
             'fail': 0,
             'noitems': 0,
@@ -774,8 +776,9 @@ def search_worker_thread(args, account_queue, account_failures,
             log.info(status['message'])
 
             # New lease of life right here.
-            status['fail'] = 0
+            status['account'] = account
             status['success'] = 0
+            status['fail'] = 0
             status['noitems'] = 0
             status['skip'] = 0
             status['captcha'] = 0
@@ -1010,6 +1013,7 @@ def search_worker_thread(args, account_queue, account_failures,
                         break
 
                     if args.account_max_level > 0:
+                        # Parse stats from response into the account.
                         parse_account_stats(args, api, response_dict, account)
 
                     parsed = parse_map(args, response_dict, step_location,
@@ -1045,6 +1049,9 @@ def search_worker_thread(args, account_queue, account_failures,
                     if response_dict is not None:
                         del response_dict
 
+                if account['first_login']:
+                    account['first_login'] = False
+
                 # Try to spin any pokestops within maximum range (38 meters).
                 if account['level'] < args.account_max_level and parsed:
                     for pokestop in parsed.get('pokestops', {}).values():
@@ -1059,8 +1066,6 @@ def search_worker_thread(args, account_queue, account_failures,
                             log.warning('%s Exception: %s', status['message'],
                                         repr(e))
 
-                if account['first_login']:
-                    account['first_login'] = False
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:
                     # Build a list of gyms to update.
