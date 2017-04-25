@@ -202,6 +202,7 @@ def complete_tutorial(api, account, tutorial_state):
     return True
 
 
+# Used by models.py::parse_map
 def get_player_level(map_dict):
     inventory_items = map_dict['responses'].get(
         'GET_INVENTORY', {}).get(
@@ -226,8 +227,10 @@ def parse_account_stats(args, response_dict, account):
             del used_pokestops[pokestop_id]
     account['used_pokestops'] = used_pokestops
 
-    inventory_items = response_dict['responses'].get('GET_INVENTORY', {}).get(
-        'inventory_delta', {}).get('inventory_items', [])
+    inventory_items = response_dict['responses'].get(
+        'GET_INVENTORY', {}).get(
+        'inventory_delta', {}).get(
+        'inventory_items', [])
     player_stats = {}
     player_items = {}
     for item in inventory_items:
@@ -286,20 +289,6 @@ def recycle_items(status, api, account):
     return True
 
 
-def request_recycle_item(api, item_id, count):
-    req = api.create_request()
-    response_dict = req.recycle_inventory_item(item_id=item_id, count=count)
-    response_dict = req.call()
-
-    recycle_item = response_dict['responses'].get('RECYCLE_INVENTORY_ITEM', {})
-    if recycle_item:
-        drop_result = recycle_item.get('result', 0)
-        if drop_result == 1:
-            return recycle_item.get('new_count', 0)
-
-    return -1
-
-
 def handle_pokestop(status, api, account, pokestop):
     location = account['last_location']
     pokestop_id = pokestop['pokestop_id']
@@ -355,18 +344,66 @@ def handle_pokestop(status, api, account, pokestop):
 
 
 def request_fort_search(api, pokestop, location):
-    req = api.create_request()
-    response = req.fort_search(fort_id=pokestop['pokestop_id'],
-                               fort_latitude=pokestop['latitude'],
-                               fort_longitude=pokestop['longitude'],
-                               player_latitude=location[0],
-                               player_longitude=location[1])
-    response = req.check_challenge()
-    response = req.get_hatched_eggs()
-    response = req.get_inventory()
-    response = req.check_awarded_badges()
-    response = req.download_settings()
-    response = req.get_buddy_walked()
-    response = req.call()
+    try:
+        req = api.create_request()
+        res = req.fort_search(fort_id=pokestop['pokestop_id'],
+                              fort_latitude=pokestop['latitude'],
+                              fort_longitude=pokestop['longitude'],
+                              player_latitude=location[0],
+                              player_longitude=location[1])
+        res = req.check_challenge()
+        res = req.get_hatched_eggs()
+        res = req.get_inventory()
+        res = req.check_awarded_badges()
+        res = req.download_settings()
+        res = req.get_buddy_walked()
+        res = req.call()
 
-    return response
+        return res
+    except Exception as e:
+        log.warning('Exception while spinning Pokestop: %s', repr(e))
+
+    return False
+
+
+def request_recycle_item(api, item_id, amount):
+    try:
+        req = api.create_request()
+        res = req.recycle_inventory_item(item_id=item_id, count=amount)
+        res = req.check_challenge()   # real app behavior
+        res = req.get_inventory()   # real app behavior
+        res = req.call()
+
+        recycle_item = res['responses'].get('RECYCLE_INVENTORY_ITEM', {})
+        if recycle_item:
+            drop_result = recycle_item.get('result', 0)
+            if drop_result == 1:
+                return recycle_item.get('new_count', 0)
+
+    except Exception as e:
+        log.warning('Exception while dropping items: %s', repr(e))
+
+    return -1
+
+
+# Send LevelUpRewards request to check for and accept level up rewards.
+# @Returns
+# 0: UNSET
+# 1: SUCCESS
+# 2: AWARDED_ALREADY
+def level_up_rewards_request(api, account):
+    log.info('Check level up rewards for account %s.', account['username'])
+    time.sleep(random.uniform(2, 3))
+    try:
+        req = api.create_request()
+        req.level_up_rewards(level=account['level'])
+        req.check_challenge()
+        res = req.call()
+        if ('responses' in res) and ('LEVEL_UP_REWARDS' in res['responses']):
+            reward_details = res['responses']['LEVEL_UP_REWARDS']
+            return reward_details.get('result', -1)
+
+    except Exception as e:
+        log.warning('Exception while requesting level up rewards: %s', repr(e))
+
+    return False

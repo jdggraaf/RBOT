@@ -157,6 +157,12 @@ def get_args():
     parser.add_argument('-aml', '--account-max-level',
                         help='Spin Pokestops until this level is reached.',
                         type=int, default=4)
+    parser.add_argument('-ams', '--account-max-spins',
+                        help='Maximum number of Pokestop spins per hour.',
+                        type=int, default=80)
+    parser.add_argument('-amc', '--account-max-catches',
+                        help='Maximum number of Pokemon caught per hour.',
+                        type=int, default=60)
     parser.add_argument('-ed', '--encounter-delay',
                         help=('Time delay between encounter pokemon ' +
                               'in scan threads.'),
