@@ -97,6 +97,9 @@ def switch_status_printer(display_type, current_page, mainlog,
         elif command.lower() == 'h':
             mainlog.handlers[0].setLevel(logging.CRITICAL)
             display_type[0] = 'hashstatus'
+        elif command.lower() == 'a':
+            mainlog.handlers[0].setLevel(logging.CRITICAL)
+            display_type[0] = 'accountstats'
 
 
 # Thread to print out the status of each worker.
@@ -268,6 +271,85 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                         key_instance['remaining'],
                         key_instance['maximum'],
                         key_instance['peak']))
+        elif display_type[0] == 'accountstats':
+            status_text.append(
+                '----------------------------------------------------------')
+            status_text.append('Account statistics:')
+            status_text.append(
+                '----------------------------------------------------------')
+
+            # Collect all account data.
+            accounts = []
+            for item in threadStatus:
+                if threadStatus[item]['type'] == 'Worker':
+                    worker = threadStatus[item]
+                    account = worker.get('account', {})
+                    accounts.append(('Active', account))
+            for account in list(account_queue.queue):
+                accounts.append(('Free', account))
+            for captcha_tuple in list(account_captchas):
+                account = captcha_tuple[1]
+                accounts.append(('Captcha', account))
+            for acc_fail in account_failures:
+                account = acc_fail['account']
+                accounts.append(('Failed', account))
+
+            # Determine maximum username length.
+            userlen = 4
+            for account_status, acc in accounts:
+                userlen = max(userlen, len(acc.get('username', '')))
+
+            # Print table header.
+            status = '{:7} | {:' + str(userlen) + '} | {:5} | {:>8} | {:10}' \
+                     ' | {:6} | {:8} | {:5} | {:>10} | {:>7} |'
+            status_text.append(
+                status.format(
+                    'Status', 'User', 'Level', 'XP', 'Encounters', 'Throws',
+                    'Captures', 'Spins', 'Walked', 'Warning'))
+
+            # Get the terminal size.
+            width, height = terminalsize.get_terminal_size()
+            # Queue and overseer take 2 lines.  Switch message takes up 2
+            # lines.  Remove an extra 2 for things like screen status lines.
+            usable_height = height - 6
+            # Prevent people running terminals only 6 lines high from getting a
+            # divide by zero.
+            if usable_height < 1:
+                usable_height = 1
+
+            total_pages = math.ceil(len(accounts) / float(usable_height))
+
+            # Prevent moving outside the valid range of pages.
+            if current_page[0] > total_pages:
+                current_page[0] = total_pages
+            if current_page[0] < 1:
+                current_page[0] = 1
+
+            # Calculate which lines to print (1-based).
+            start_line = usable_height * (current_page[0] - 1) + 1
+            end_line = start_line + usable_height - 1
+
+            # Print account statistics.
+            current_line = 0
+            for status, account in accounts:
+                # Skip over items that don't belong on this page.
+                current_line += 1
+                if current_line < start_line:
+                    continue
+                if current_line > end_line:
+                    break
+                log.debug("%s Account: %s", account_status, account)
+                status_text.append(status.format(
+                    account_status,
+                    account['nickname'],
+                    account['level'],
+                    account['experience'],
+                    account['encounters'],
+                    account['throws'],
+                    account['captures'],
+                    account['spins'],
+                    '{:.1f} km'.format(account['walked']),
+                    account['warning']))
 
         # Print the status_text for the current screen.
         status_text.append((
@@ -370,6 +452,15 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         account['tutorials'] = []
         account['level'] = 1
         account['items'] = []
+        account['item_count'] = 0
+        account['nickname'] = ''
+        account['level'] = 0
+        account['experience'] = 0
+        account['encounters'] = 0
+        account['throws'] = 0
+        account['captures'] = 0
+        account['spins'] = 0
+        account['walked'] = 0.0
         # account['last_active'] = datetime.utcnow()
         # account['last_location'] = None
         account['used_pokestops'] = {}

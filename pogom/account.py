@@ -258,6 +258,7 @@ def parse_account_stats(args, api, response_dict, account):
         'inventory_items', [])
     player_stats = {}
     player_items = {}
+    total_items = 0
     for item in inventory_items:
         item_data = item.get('inventory_item_data', {})
         if 'player_stats' in item_data:
@@ -266,9 +267,12 @@ def parse_account_stats(args, api, response_dict, account):
             item_id = item_data['item'].get('item_id', 0)
             item_count = item_data['item'].get('count', 0)
             player_items[item_id] = item_count
+            total_items += item_count
 
-    log.debug('Account %s items: %s', account['username'], player_items)
     player_level = player_stats.get('level', 0)
+    log.debug('Account %s is level %d and has %d items: %s',
+              account['username'], player_level, total_items, player_items)
+
     if player_level > 0:
         if player_level > account['level']:
             log.info('Account %s has leveled up! Current level: %d',
@@ -280,11 +284,18 @@ def parse_account_stats(args, api, response_dict, account):
             else:
                 log.warning('Account %s failed to collect level up rewards.',
                             account['username'])
-        else:
-            log.debug('Account %s is currently at level %d',
-                      account['username'], player_level)
+
         account['level'] = player_level
         account['items'] = player_items
+        account['item_count'] = total_items
+        account['nickname'] = player_stats.get('username', ''),
+        account['experience'] = player_stats.get('experience', 0),
+        account['encounters'] = player_stats.get('pokemons_encountered', 0),
+        account['throws'] = player_stats.get('pokeballs_thrown', 0),
+        account['captures'] = player_stats.get('pokemons_captured', 0),
+        account['spins'] = player_stats.get('poke_stop_visits', 0),
+        account['walked'] = player_stats.get('km_walked', 0.0)
+
         return True
 
     return False
