@@ -388,7 +388,6 @@ def recycle_items(status, api, account):
 
 
 def handle_pokestop(status, api, account, pokestop):
-    # TODO: check rate limiter
     pokestop_id = pokestop['id']
     location = account['last_location']
 
@@ -404,6 +403,7 @@ def handle_pokestop(status, api, account, pokestop):
         time.sleep(random.uniform(2, 3))
 
         spin_response = request_fort_search(api, pokestop, location)
+        account['hour_spins'] += 1
 
         # Check for captcha
         captcha_url = spin_response['responses'][
@@ -449,14 +449,15 @@ def catch_pokemon(status, api, account, pokemon):
     pokemon_id = pokemon['pokemon_data']['pokemon_id']
     encounter_id = pokemon['encounter_id']
     spawnpoint_id = pokemon['spawn_point_id']
-    # TODO: check rate limiter
+
     # Try to catch pokemon, but don't get stuck.
     attempts = 1
     while attempts < 4:
-        log.info('Starting attempt %s to catch pid: %s!', attempts, pokemon_id)
+        log.info('%d attempt to catch Pokemon #%s!', attempts, pokemon_id)
         time.sleep(random.uniform(3, 5))
 
         res = request_catch_pokemon(api, encounter_id, spawnpoint_id)
+        account['hour_throws'] += 1
 
         catch_pokemon = res['responses'].get('CATCH_POKEMON', {})
         if catch_pokemon:
@@ -468,45 +469,50 @@ def catch_pokemon(status, api, account, pokemon):
             if catch_status == 1:
                 catch_id = catch_pokemon['captured_pokemon_id']
                 log.info('Caught Pokemon %s with ID %s (%d attempt).',
-                         pokemon_id, str(catch_id), attempts)
+                         pokemon_id, catch_id, attempts)
+                account['hour_captures'] += 1
 
-                # Check inventory for new pokemon id and movesets
+                # Check inventory for the caught Pokemon.
                 inventory_items = res['responses'].get(
                     'GET_INVENTORY', {}).get(
                     'inventory_delta', {}).get(
                     'inventory_items', [])
-                # log.debug('Inventory items response: %s', inventory_items)
+
                 for item in inventory_items:
-                    if str(catch_id) in str(item):
+                    if 'pokemon_data' in item['inventory_item_data']:
                         p_data = item['inventory_item_data']['pokemon_data']
-                        pokemon_caught = {
-                            'pokemon_id': p_data['pokemon_id'],
-                            'move_1': p_data['move_1'],
-                            'move_2': p_data['move_2'],
-                            'height': p_data['height_m'],
-                            'weight': p_data['weight_kg'],
-                            'gender': p_data['pokemon_display']['gender'],
-                            'cp': 0
-                        }
-                        time.sleep(random.uniform(4, 6))
-                        if request_release_pokemon(api, catch_id):
-                            log.info('Released caught pokemon %s.', catch_id)
-                        else:
-                            log.warning('Unable to release pokemon %s.',
-                                        catch_id)
+                        p_id = p_data.get('id', 0L)
+                        if catch_id == p_id:
+                            pokemon_caught = {
+                                'pokemon_id': p_data['pokemon_id'],
+                                'move_1': p_data['move_1'],
+                                'move_2': p_data['move_2'],
+                                'height': p_data['height_m'],
+                                'weight': p_data['weight_kg'],
+                                'gender': p_data['pokemon_display']['gender'],
+                                'cp': p_data['cp']
+                            }
+                            time.sleep(random.uniform(4, 6))
+                            if request_release_pokemon(api, catch_id):
+                                log.info('Released pokemon %s after catching.',
+                                         catch_id)
+                            else:
+                                log.warning('Unable to release pokemon %s.',
+                                            catch_id)
 
-                        return pokemon_caught
-
-                if catch_status == 2:
-                    log.info('Catch attempt %d failed. Pokemon {} broke free.',
-                             attempts, pokemon_id)
-                if catch_status == 3:
-                    log.info('Catch attempt %d failed. Pokemon {} fled!',
-                             attempts, pokemon_id)
-                    break
-                if catch_status == 4:
-                    log.info('Catch attempt %d failed. Pokemon {} dodged!',
-                             attempts, pokemon_id)
+                            return pokemon_caught
+                log.error('Pokemon %s not found in inventory.', catch_id)
+                return False
+            if catch_status == 2:
+                log.info('Catch attempt %d failed. Pokemon {} broke free.',
+                         attempts, pokemon_id)
+            if catch_status == 3:
+                log.info('Catch attempt %d failed. Pokemon {} fled!',
+                         attempts, pokemon_id)
+                break
+            if catch_status == 4:
+                log.info('Catch attempt %d failed. Pokemon {} dodged!',
+                         attempts, pokemon_id)
 
         attempts += 1
     return False
@@ -515,7 +521,7 @@ def catch_pokemon(status, api, account, pokemon):
 def request_fort_search(api, pokestop, location):
     try:
         req = api.create_request()
-        res = req.fort_search(fort_id=pokestop['pokestop_id'],
+        res = req.fort_search(fort_id=pokestop['id'],
                               fort_latitude=pokestop['latitude'],
                               fort_longitude=pokestop['longitude'],
                               player_latitude=location[0],

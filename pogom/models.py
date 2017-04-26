@@ -1995,10 +1995,16 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
                 if account['level'] < args.account_max_level:
                     pokemon_id = p['pokemon_data']['pokemon_id']
-                    if pokemon_id in args.pokemon_catch_list:
+                    throws = account['hour_throws']
+                    captures = account['hour_captures']
+                    if throws < args.account_max_throws and \
+                            captures <= args.account_max_captures and \
+                            pokemon_id in args.pokemon_catch_list:
+
                         # Try to catch pokemon.
                         caught = catch_pokemon(status, api, account, p)
                         if caught:
+                            log.debug('Caught Pokemon: %s', caught)
                             pokemon_caught.append(caught['pokemon_id'])
                             if caught['pokemon_id'] == 132:
                                 log.info('Pokemon %s was a ditto! Updating ' +
@@ -2041,12 +2047,13 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
             if config['parse_pokestops'] and f.get('type') == 1:  # Pokestops.
                 # Try to spin any pokestops within maximum range (38 meters).
                 if account['level'] < args.account_max_level:
-                    distance = 0.038
-                    pokestop_loc = (f['latitude'], f['longitude'])
-                    if in_radius(step_location, pokestop_loc, distance):
-                        log.debug('Pokestop: %s is in range.', f['id'])
-                        if handle_pokestop(status, api, account, f):
-                            pokestops_visited.append(f['id'])
+                    if account['hour_spins'] < args.account_max_spins:
+                        distance = 0.038
+                        pokestop_loc = (f['latitude'], f['longitude'])
+                        if in_radius(step_location, pokestop_loc, distance):
+                            log.debug('Pokestop: %s is in range.', f['id'])
+                            if handle_pokestop(status, api, account, f):
+                                pokestops_visited.append(f['id'])
 
                 if 'active_fort_modifier' in f:
                     lure_expiration = (datetime.utcfromtimestamp(
