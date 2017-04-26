@@ -300,10 +300,10 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                 userlen = max(userlen, len(acc.get('username', '')))
 
             # Print table header.
-            status = '{:7} | {:' + str(userlen) + '} | {:5} | {:>8} | {:10}' \
-                     ' | {:6} | {:8} | {:5} | {:>10} | {:>7} |'
+            row_format = '{:7} | {:' + str(userlen) + '} | {:5} | {:>8} | ' \
+                '{:10} | {:6} | {:8} | {:5} | {:>10} | {:>7} |'
             status_text.append(
-                status.format(
+                row_format.format(
                     'Status', 'User', 'Level', 'XP', 'Encounters', 'Throws',
                     'Captures', 'Spins', 'Walked', 'Warning'))
 
@@ -331,17 +331,16 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
 
             # Print account statistics.
             current_line = 0
-            for status, account in accounts:
+            for account_status, account in accounts:
                 # Skip over items that don't belong on this page.
                 current_line += 1
                 if current_line < start_line:
                     continue
                 if current_line > end_line:
                     break
-                log.debug("%s Account: %s", account_status, account)
-                status_text.append(status.format(
+                status_text.append(row_format.format(
                     account_status,
-                    account['nickname'],
+                    account['username'],
                     account['level'],
                     account['experience'],
                     account['encounters'],

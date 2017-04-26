@@ -226,6 +226,34 @@ def get_player_level(map_dict):
     return 0
 
 
+def get_player_state(api, account):
+    try:
+        req = api.create_request()
+        req.get_player(
+            player_locale={
+                'country': 'US',
+                'language': 'en',
+                'timezone': 'America/Los_Angeles'})
+        res = req.check_challenge()
+        res = req.call()
+
+        get_player = res.get('responses', {}).get('GET_PLAYER', {})
+        warning_state = get_player.get('warn', None)
+        banned_state = get_player.get('banned', False)
+        player_data = get_player.get('player_data', {})
+        tutorial_state = player_data.get('tutorial_state', [])
+        account['warning'] = warning_state
+        account['banned'] = banned_state
+        account['tutorials'] = tutorial_state
+        time.sleep(random.uniform(1, 3))
+
+        return True
+    except Exception as e:
+        log.warning('Exception while getting player state: %s', repr(e))
+
+    return False
+
+
 def parse_account_stats(args, api, response_dict, account):
     # Re-enable pokestops that have been used.
     used_pokestops = dict(account['used_pokestops'])
@@ -274,7 +302,7 @@ def parse_account_stats(args, api, response_dict, account):
               account['username'], player_level, total_items, player_items)
 
     if player_level > 0:
-        if player_level > account['level']:
+        if account['level'] > 0 and player_level > account['level']:
             log.info('Account %s has leveled up! Current level: %d',
                      account['username'], player_level)
             time.sleep(random.uniform(2.0, 3.0))
@@ -288,12 +316,11 @@ def parse_account_stats(args, api, response_dict, account):
         account['level'] = player_level
         account['items'] = player_items
         account['item_count'] = total_items
-        account['nickname'] = player_stats.get('username', ''),
-        account['experience'] = player_stats.get('experience', 0),
-        account['encounters'] = player_stats.get('pokemons_encountered', 0),
-        account['throws'] = player_stats.get('pokeballs_thrown', 0),
-        account['captures'] = player_stats.get('pokemons_captured', 0),
-        account['spins'] = player_stats.get('poke_stop_visits', 0),
+        account['experience'] = player_stats.get('experience', 0L)
+        account['encounters'] = player_stats.get('pokemons_encountered', 0)
+        account['throws'] = player_stats.get('pokeballs_thrown', 0)
+        account['captures'] = player_stats.get('pokemons_captured', 0)
+        account['spins'] = player_stats.get('poke_stop_visits', 0)
         account['walked'] = player_stats.get('km_walked', 0.0)
 
         return True
@@ -301,38 +328,58 @@ def parse_account_stats(args, api, response_dict, account):
     return False
 
 
+# https://docs.pogodev.org/api/enums/Item/
+# ITEM_POKEBALL = 1
+# ITEM_GREATBALL = 2
+# ITEM_ULTRABALL = 3
+# ITEM_POTION = 101
+# ITEM_SUPER_POTION = 102
+# ITEM_HYPER_POTION = 103
+# ITEM_MAX_POTION = 104
+# ITEM_REVIVE = 201
+# ITEM_MAX_REVIVE = 202
+# ITEM_RAZZ_BERRY = 701
+# ITEM_NANAB_BERRY = 703
+# ITEM_PINAP_BERRY = 705
 def recycle_items(status, api, account):
-    pokeball_count = account['items'].get(1, 0)
-    potion_count = account['items'].get(101, 0)
+    item_names = ['Pokeball', 'Greatball', 'Ultraball',
+                  'Potion', 'Super Potion', 'Hyper Potion', 'Hyper Potion',
+                  'Max Potion', 'Revive', 'Max Revive',
+                  'Razz Berry', 'Nanab Berry', 'Pinap Berry']
+    item_ids = [1, 2, 3,
+                101, 102, 103, 104, 201, 202,
+                701, 703, 705]
+    item_mins = [100, 40, 40,
+                 10, 10, 10, 40, 10, 40,
+                 10, 10, 10]
+    item_ratios = [0.05, 0.05, 0.03,
+                   0.30, 0.20, 0.20, 0.05, 0.10, 0.03,
+                   0.20, 0.20, 0.20]
 
-    if pokeball_count > 50:
-        drop_count = pokeball_count - 20 - random.randint(5, 10)
-        status['message'] = 'Dropping {} Pokeballs.'.format(drop_count)
-        log.info(status['message'])
-        time.sleep(random.uniform(4.0, 6.0))
-        new_count = request_recycle_item(api, 1, drop_count)
-        if new_count == -1:
-            status['message'] = 'Failed to recycle Pokeballs.'
-            log.warning(status['message'])
-            return False
-        account['items'][1] = new_count
+    for i in random.shuffle(range(0, len(item_ids))):
+        item_count = account['items'].get(item_ids[i], 0)
+        item_id = item_ids[i]
+        item_name = item_names[i]
+        if item_count > item_mins[i]:
+            drop_count = int(item_count * item_ratios[i])
 
-    if potion_count > 30:
-        drop_count = potion_count - 10 - random.randint(5, 10)
-        status['message'] = 'Dropping {} Potions.'.format(drop_count)
-        log.info(status['message'])
-        time.sleep(random.uniform(4.0, 6.0))
-        new_count = request_recycle_item(api, 101, drop_count)
-        if new_count == -1:
-            status['message'] = 'Failed to recycle Potions.'
-            log.warning(status['message'])
-            return False
-        account['items'][101] = new_count
+            status['message'] = 'Trying to drop {} {}.'.format(
+                drop_count, item_name)
+            log.info(status['message'])
+            time.sleep(random.uniform(2.5, 5.0))
+            new_count = request_recycle_item(api, item_id, drop_count)
+            if new_count == -1:
+                status['message'] = 'Failed to recycle {} (id {}).'.format(
+                    item_name, item_id)
+                log.warning(status['message'])
+                return False
+            account['items'][item_id] = new_count
 
     return True
 
 
 def handle_pokestop(status, api, account, pokestop):
+    # TODO: check rate limiter
     location = account['last_location']
     pokestop_id = pokestop['pokestop_id']
     if pokestop_id in account['used_pokestops']:
@@ -448,30 +495,27 @@ def request_level_up_rewards(api, account):
     return False
 
 
-def get_player_state(api, account):
+def request_catch_pokemon(api, pokemon, ball_id):
     try:
         req = api.create_request()
-        req.get_player(
-            player_locale={
-                'country': 'US',
-                'language': 'en',
-                'timezone': 'America/Los_Angeles'})
+        res = req.catch_pokemon(
+            encounter_id=pokemon['encounter_id'],
+            pokeball=1,
+            normalized_reticle_size=1.950,
+            spawn_point_id=pokemon['spawnpoin_id'],
+            hit_pokemon=1,
+            spin_modifier=1.0,
+            normalized_hit_position=1.0)
         res = req.check_challenge()
+        res = req.get_hatched_eggs()
+        res = req.get_inventory()
+        res = req.check_awarded_badges()
+        res = req.download_settings()
+        res = req.get_buddy_walked()
         res = req.call()
 
-        get_player = res.get('responses', {}).get('GET_PLAYER', {})
-        warning_state = get_player.get('warn', None)
-        banned_state = get_player.get('banned', False)
-        player_data = get_player.get('player_data', {})
-        tutorial_state = player_data.get('tutorial_state', [])
-        account['warning'] = warning_state
-        account['banned'] = banned_state
-        account['tutorials'] = tutorial_state
-        time.sleep(random.uniform(1, 3))
-
-        return True
-
+        return res
     except Exception as e:
-        log.warning('Exception while getting player state: %s', repr(e))
+        log.warning('Exception while catching Pokemon: %s', repr(e))
 
     return False
