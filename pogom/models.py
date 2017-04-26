@@ -2009,8 +2009,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                             if caught['pokemon_id'] == 132:
                                 log.info('Pokemon %s was a ditto! Updating ' +
                                          'pokemon data.', pokemon_id)
-                            # DEBUG: This next line should be identented.
-                            pokemon[p['encounter_id']].update(caught)
+                                pokemon[p['encounter_id']].update(caught)
 
             if args.webhooks:
                 pokemon_id = p['pokemon_data']['pokemon_id']

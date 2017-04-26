@@ -66,24 +66,34 @@ def check_login(args, account, api, position, proxy_url):
     time.sleep(20)
 
 
-# XXX: unused
+# Check if player has received any warnings or is banned.
 # Check if all important tutorial steps have been completed.
-# API argument needs to be a logged in API instance.
-def get_tutorial_state(api, account):
-    log.debug('Checking tutorial state for %s.', account['username'])
-    request = api.create_request()
-    request.get_player(
-        player_locale={'country': 'US',
-                       'language': 'en',
-                       'timezone': 'America/Denver'})
+def get_player_state(api, account):
+    try:
+        req = api.create_request()
+        req.get_player(
+            player_locale={
+                'country': 'US',
+                'language': 'en',
+                'timezone': 'America/Los_Angeles'})
+        res = req.check_challenge()
+        res = req.call()
 
-    response = request.call().get('responses', {})
+        get_player = res.get('responses', {}).get('GET_PLAYER', {})
+        warning_state = get_player.get('warn', None)
+        banned_state = get_player.get('banned', False)
+        player_data = get_player.get('player_data', {})
+        tutorial_state = player_data.get('tutorial_state', [])
+        account['warning'] = warning_state
+        account['banned'] = banned_state
+        account['tutorials'] = tutorial_state
+        time.sleep(random.uniform(1, 3))
 
-    get_player = response.get('GET_PLAYER', {})
-    tutorial_state = get_player.get(
-        'player_data', {}).get('tutorial_state', [])
-    time.sleep(random.uniform(2, 4))
-    return tutorial_state
+        return True
+    except Exception as e:
+        log.warning('Exception while getting player state: %s', repr(e))
+
+    return False
 
 
 # Complete minimal tutorial steps.
@@ -209,68 +219,31 @@ def complete_tutorial(api, account):
     return True
 
 
-# Used by models.py::parse_map
-def get_player_level(map_dict):
-    inventory_items = map_dict['responses'].get(
-        'GET_INVENTORY', {}).get(
-        'inventory_delta', {}).get(
-        'inventory_items', [])
-    player_stats = [item['inventory_item_data']['player_stats']
-                    for item in inventory_items
-                    if 'player_stats' in item.get(
-                    'inventory_item_data', {})]
-    if len(player_stats) > 0:
-        player_level = player_stats[0].get('level', 1)
-        return player_level
-
-    return 0
-
-
-def get_player_state(api, account):
-    try:
-        req = api.create_request()
-        req.get_player(
-            player_locale={
-                'country': 'US',
-                'language': 'en',
-                'timezone': 'America/Los_Angeles'})
-        res = req.check_challenge()
-        res = req.call()
-
-        get_player = res.get('responses', {}).get('GET_PLAYER', {})
-        warning_state = get_player.get('warn', None)
-        banned_state = get_player.get('banned', False)
-        player_data = get_player.get('player_data', {})
-        tutorial_state = player_data.get('tutorial_state', [])
-        account['warning'] = warning_state
-        account['banned'] = banned_state
-        account['tutorials'] = tutorial_state
-        time.sleep(random.uniform(1, 3))
-
-        return True
-    except Exception as e:
-        log.warning('Exception while getting player state: %s', repr(e))
-
-    return False
-
-
-def parse_account_stats(args, api, response_dict, account):
-    # Re-enable pokestops that have been used.
-    used_pokestops = dict(account['used_pokestops'])
-    for pokestop_id in account['used_pokestops']:
-        last_attempt = account['used_pokestops'][pokestop_id]
-        if (last_attempt + args.pokestop_refresh_time) < time.time():
-            del used_pokestops[pokestop_id]
-    account['used_pokestops'] = used_pokestops
-
+def cleanup_account_stats(account, pokestop_timeout):
     # Do hourly account statistics cleanup.
     last_cleanup = account['last_cleanup']
     if (last_cleanup + 3600) < time.time():
+        log.info('Account %s hourly stats: %d throws - %d captures - %d spins',
+                 account['username'], account['hour_throws'],
+                 account['hour_captures'], account['hour_spins'])
+        # These counters are used to limit levelling actions per hour.
         account['hour_throws'] = 0
         account['hour_captures'] = 0
         account['hour_spins'] = 0
         account['last_cleanup'] = time.time()
 
+    # Refresh visited pokestops that were on timeout.
+    used_pokestops = dict(account['used_pokestops'])
+    for pokestop_id in account['used_pokestops']:
+        last_attempt = account['used_pokestops'][pokestop_id]
+        if (last_attempt + pokestop_timeout) < time.time():
+            del used_pokestops[pokestop_id]
+    account['used_pokestops'] = used_pokestops
+
+
+# Parse player level and inventory into account dictionary.
+# Manage account statistics and does regular cleanup.
+def parse_account_stats(args, api, response_dict, account):
     if account['first_login']:
         # Check if account is banned.
         status_code = response_dict.get('status_code', -1)
@@ -286,6 +259,8 @@ def parse_account_stats(args, api, response_dict, account):
         else:
             log.info('Account %s already collected level up rewards.',
                      account['username'])
+
+    cleanup_account_stats(account, args.pokestop_refresh_time)
 
     # Parse inventory items into account.
     inventory_items = response_dict['responses'].get(
@@ -334,6 +309,32 @@ def parse_account_stats(args, api, response_dict, account):
         return True
 
     return False
+
+
+def parse_player_pokemons(response_dict):
+    pokemons = {}
+    # Check inventory for Pokemon data.
+    inventory_items = response_dict['responses'].get(
+        'GET_INVENTORY', {}).get(
+        'inventory_delta', {}).get(
+        'inventory_items', [])
+
+    for item in inventory_items:
+        if 'pokemon_data' in item['inventory_item_data']:
+            p_data = item['inventory_item_data']['pokemon_data']
+            p_id = p_data.get('id', 0L)
+            if p_id:
+                pokemons[p_id] = {
+                    'pokemon_id': p_data['pokemon_id'],
+                    'move_1': p_data['move_1'],
+                    'move_2': p_data['move_2'],
+                    'height': p_data['height_m'],
+                    'weight': p_data['weight_kg'],
+                    'gender': p_data['pokemon_display']['gender'],
+                    'cp': p_data['cp']
+                }
+
+    return pokemons
 
 
 # https://docs.pogodev.org/api/enums/Item/
@@ -398,7 +399,8 @@ def handle_pokestop(status, api, account, pokestop):
 
     attempts = 1
     while attempts < 4:
-        status['message'] = 'Spinning Pokestop ID: {}'.format(pokestop_id)
+        status['message'] = 'Spinning Pokestop {} - attempt %d.'.format(
+            pokestop_id, attempts)
         log.info(status['message'])
         time.sleep(random.uniform(2, 3))
 
@@ -453,10 +455,24 @@ def catch_pokemon(status, api, account, pokemon):
     # Try to catch pokemon, but don't get stuck.
     attempts = 1
     while attempts < 4:
-        log.info('%d attempt to catch Pokemon #%s!', attempts, pokemon_id)
+        # Select Pokeball to throw
+        if account['items'].get(1, 0) > 0:
+            ball_id = 1
+        elif account['items'].get(2, 0) > 0:
+            ball_id = 2
+        elif account['items'].get(3, 0) > 0:
+            ball_id = 3
+        else:
+            log.info('Account %s has no Pokeballs to throw at Pokemon #%d.',
+                     account['username'], pokemon_id)
+            return False
+        status['message'] = (
+            'Catching Pokemon #{} using ball #{} - attempt {}.').format(
+                pokemon_id, ball_id, attempts)
+        log.info(status['message'])
         time.sleep(random.uniform(3, 5))
 
-        res = request_catch_pokemon(api, encounter_id, spawnpoint_id)
+        res = request_catch_pokemon(api, encounter_id, spawnpoint_id, ball_id)
         account['hour_throws'] += 1
 
         catch_pokemon = res['responses'].get('CATCH_POKEMON', {})
@@ -467,10 +483,13 @@ def catch_pokemon(status, api, account, pokemon):
             if catch_status <= 0:
                 return False
             if catch_status == 1:
-                catch_id = catch_pokemon['captured_pokemon_id']
-                log.info('Caught Pokemon %s with ID %s (%d attempt).',
-                         pokemon_id, catch_id, attempts)
                 account['hour_captures'] += 1
+
+                catch_id = catch_pokemon['captured_pokemon_id']
+                status['message'] = (
+                    'Caught Pokemon #{} {} with ball #{}!').format(
+                        pokemon_id, catch_id, ball_id)
+                log.info(status['message'])
 
                 # Check inventory for the caught Pokemon.
                 inventory_items = res['responses'].get(
@@ -483,6 +502,7 @@ def catch_pokemon(status, api, account, pokemon):
                         p_data = item['inventory_item_data']['pokemon_data']
                         p_id = p_data.get('id', 0L)
                         if catch_id == p_id:
+                            # TODO: maybe we can update pokemon here.
                             pokemon_caught = {
                                 'pokemon_id': p_data['pokemon_id'],
                                 'move_1': p_data['move_1'],
