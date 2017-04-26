@@ -399,7 +399,7 @@ def handle_pokestop(status, api, account, pokestop):
 
     attempts = 1
     while attempts < 4:
-        status['message'] = 'Spinning Pokestop {} - attempt %d.'.format(
+        status['message'] = 'Spinning Pokestop {} - attempt {}.'.format(
             pokestop_id, attempts)
         log.info(status['message'])
         time.sleep(random.uniform(2, 3))
@@ -455,7 +455,7 @@ def catch_pokemon(status, api, account, pokemon):
     # Try to catch pokemon, but don't get stuck.
     attempts = 1
     while attempts < 4:
-        # Select Pokeball to throw
+        # Select Pokeball type to throw.
         if account['items'].get(1, 0) > 0:
             ball_id = 1
         elif account['items'].get(2, 0) > 0:
@@ -463,8 +463,11 @@ def catch_pokemon(status, api, account, pokemon):
         elif account['items'].get(3, 0) > 0:
             ball_id = 3
         else:
-            log.info('Account %s has no Pokeballs to throw at Pokemon #%d.',
-                     account['username'], pokemon_id)
+            status['message'] = (
+                'Account {} has no Pokeballs to throw at Pokemon #{}.').format(
+                    account['username'], pokemon_id)
+            log.warning(status['message'])
+
             return False
         status['message'] = (
             'Catching Pokemon #{} using ball #{} - attempt {}.').format(
@@ -481,6 +484,10 @@ def catch_pokemon(status, api, account, pokemon):
             catch_status = catch_pokemon.get('status', -1)
 
             if catch_status <= 0:
+                status['message'] = (
+                    'Account {} failed to catch Pokemon #{}: {}').format(
+                        account['username'], pokemon_id, catch_status)
+                log.warning(status['message'])
                 return False
             if catch_status == 1:
                 account['hour_captures'] += 1
@@ -491,12 +498,13 @@ def catch_pokemon(status, api, account, pokemon):
                         pokemon_id, catch_id, ball_id)
                 log.info(status['message'])
 
-                # Check inventory for the caught Pokemon.
+                # Check if caught Pokemon is a Ditto.
                 inventory_items = res['responses'].get(
                     'GET_INVENTORY', {}).get(
                     'inventory_delta', {}).get(
                     'inventory_items', [])
 
+                pokemon_caught = {}
                 for item in inventory_items:
                     if 'pokemon_data' in item['inventory_item_data']:
                         p_data = item['inventory_item_data']['pokemon_data']
@@ -512,27 +520,42 @@ def catch_pokemon(status, api, account, pokemon):
                                 'gender': p_data['pokemon_display']['gender'],
                                 'cp': p_data['cp']
                             }
-                            time.sleep(random.uniform(4, 6))
-                            if request_release_pokemon(api, catch_id):
-                                log.info('Released pokemon %s after catching.',
-                                         catch_id)
-                            else:
-                                log.warning('Unable to release pokemon %s.',
-                                            catch_id)
 
-                            return pokemon_caught
-                log.error('Pokemon %s not found in inventory.', catch_id)
-                return False
+                time.sleep(random.uniform(4, 6))
+
+                if request_release_pokemon(api, catch_id):
+                    status['message'] = (
+                        'Released Pokemon {} after capture.').format(
+                            catch_id)
+                    log.info(status['message'])
+                else:
+                    status['message'] = (
+                        'Unable to release captured Pokemon {}.').format(
+                            catch_id)
+                    log.warning(status['message'])
+
+                if not pokemon_caught:
+                    log.error('Pokemon %s not found in inventory.', catch_id)
+                    return False
+
+                return pokemon_caught
+
             if catch_status == 2:
-                log.info('Catch attempt %d failed. Pokemon {} broke free.',
-                         attempts, pokemon_id)
+                status['message'] = (
+                    'Catch attempt {} failed. Pokemon #{} broke free.').format(
+                        attempts, pokemon_id)
+                log.info(status['message'])
             if catch_status == 3:
-                log.info('Catch attempt %d failed. Pokemon {} fled!',
-                         attempts, pokemon_id)
+                status['message'] = (
+                    'Catch attempt {} failed. Pokemon #{} fled!').format(
+                        attempts, pokemon_id)
+                log.info(status['message'])
                 break
             if catch_status == 4:
-                log.info('Catch attempt %d failed. Pokemon {} dodged!',
-                         attempts, pokemon_id)
+                status['message'] = (
+                    'Catch attempt {} failed. Pokemon #{} dodged.').format(
+                        attempts, pokemon_id)
+                log.info(status['message'])
 
         attempts += 1
     return False
