@@ -449,6 +449,8 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         account['warning'] = None
         account['banned'] = False
         account['tutorials'] = []
+        account['max_items'] = 350
+        account['max_pokemons'] = 250
         account['level'] = 1
         account['items'] = []
         account['item_count'] = 0
@@ -1048,6 +1050,16 @@ def search_worker_thread(args, account_queue, account_failures,
                         if account['warning']:
                             log.warning('Account %s has received a warning.',
                                         account['username'])
+                        if account['banned']:
+                            status['message'] = (
+                                'Account %s is marked as banned!').format(
+                                    account['username'])
+                            log.warning(status['message'])
+                            account_failures.append({'account': account,
+                                                     'last_fail_time': now(),
+                                                     'reason': 'banned'})
+                            break
+
                         # Check tutorial completion.
                         if args.complete_tutorial:
                             if not all(x in account['tutorials']

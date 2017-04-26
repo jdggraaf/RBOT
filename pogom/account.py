@@ -70,6 +70,7 @@ def check_login(args, account, api, position, proxy_url):
 # Check if all important tutorial steps have been completed.
 def get_player_state(api, account):
     try:
+        time.sleep(random.uniform(1, 2))
         req = api.create_request()
         req.get_player(
             player_locale={
@@ -84,10 +85,14 @@ def get_player_state(api, account):
         banned_state = get_player.get('banned', False)
         player_data = get_player.get('player_data', {})
         tutorial_state = player_data.get('tutorial_state', [])
+        max_items = player_data.get('max_item_storage', 350)
+        max_pokemons = player_data.get('max_pokemon_storage', 250)
+
         account['warning'] = warning_state
         account['banned'] = banned_state
         account['tutorials'] = tutorial_state
-        time.sleep(random.uniform(1, 3))
+        account['max_items'] = max_items
+        account['max_pokemons'] = max_pokemons
 
         return True
     except Exception as e:
