@@ -263,6 +263,14 @@ def parse_account_stats(args, api, response_dict, account):
             del used_pokestops[pokestop_id]
     account['used_pokestops'] = used_pokestops
 
+    # Do hourly account statistics cleanup.
+    last_cleanup = account['last_cleanup']
+    if (last_cleanup + 3600) < time.time():
+        account['hour_throws'] = 0
+        account['hour_captures'] = 0
+        account['hour_spins'] = 0
+        account['last_cleanup'] = time.time()
+
     if account['first_login']:
         # Check if account is banned.
         status_code = response_dict.get('status_code', -1)
@@ -355,18 +363,19 @@ def recycle_items(status, api, account):
     item_ratios = [0.05, 0.05, 0.03,
                    0.30, 0.20, 0.20, 0.05, 0.10, 0.03,
                    0.20, 0.20, 0.20]
-
-    for i in random.shuffle(range(0, len(item_ids))):
+    indexes = range(len(item_ids))
+    random.shuffle(indexes)
+    for i in indexes:
         item_count = account['items'].get(item_ids[i], 0)
-        item_id = item_ids[i]
-        item_name = item_names[i]
         if item_count > item_mins[i]:
+            item_id = item_ids[i]
+            item_name = item_names[i]
             drop_count = int(item_count * item_ratios[i])
 
             status['message'] = 'Trying to drop {} {}.'.format(
                 drop_count, item_name)
             log.info(status['message'])
-            time.sleep(random.uniform(2.5, 5.0))
+            time.sleep(random.uniform(3.0, 5.0))
             new_count = request_recycle_item(api, item_id, drop_count)
             if new_count == -1:
                 status['message'] = 'Failed to recycle {} (id {}).'.format(
@@ -380,15 +389,16 @@ def recycle_items(status, api, account):
 
 def handle_pokestop(status, api, account, pokestop):
     # TODO: check rate limiter
+    pokestop_id = pokestop['id']
     location = account['last_location']
-    pokestop_id = pokestop['pokestop_id']
+
     if pokestop_id in account['used_pokestops']:
         return False
     if not recycle_items(status, api, account):
         return False
 
-    attempts = 3
-    while attempts > 0:
+    attempts = 1
+    while attempts < 4:
         status['message'] = 'Spinning Pokestop ID: {}'.format(pokestop_id)
         log.info(status['message'])
         time.sleep(random.uniform(2, 3))
@@ -404,7 +414,7 @@ def handle_pokestop(status, api, account, pokestop):
             return False
 
         fort_search = spin_response['responses'].get('FORT_SEARCH', {})
-        if 'result' in fort_search:
+        if fort_search:
             spin_result = fort_search.get('result', -1)
             spun_pokestop = True
             if spin_result == 1:
@@ -429,7 +439,76 @@ def handle_pokestop(status, api, account, pokestop):
                 account['used_pokestops'][pokestop_id] = time.time()
                 return True
 
-        attempts -= 1
+        attempts += 1
+    return False
+
+
+# https://docs.pogodev.org/api/messages/CatchPokemonProto/
+# https://docs.pogodev.org/api/messages/CatchPokemonOutProto/
+def catch_pokemon(status, api, account, pokemon):
+    pokemon_id = pokemon['pokemon_data']['pokemon_id']
+    encounter_id = pokemon['encounter_id']
+    spawnpoint_id = pokemon['spawn_point_id']
+    # TODO: check rate limiter
+    # Try to catch pokemon, but don't get stuck.
+    attempts = 1
+    while attempts < 4:
+        log.info('Starting attempt %s to catch pid: %s!', attempts, pokemon_id)
+        time.sleep(random.uniform(3, 5))
+
+        res = request_catch_pokemon(api, encounter_id, spawnpoint_id)
+
+        catch_pokemon = res['responses'].get('CATCH_POKEMON', {})
+        if catch_pokemon:
+
+            catch_status = catch_pokemon.get('status', -1)
+
+            if catch_status <= 0:
+                return False
+            if catch_status == 1:
+                catch_id = catch_pokemon['captured_pokemon_id']
+                log.info('Caught Pokemon %s with ID %s (%d attempt).',
+                         pokemon_id, str(catch_id), attempts)
+
+                # Check inventory for new pokemon id and movesets
+                inventory_items = res['responses'].get(
+                    'GET_INVENTORY', {}).get(
+                    'inventory_delta', {}).get(
+                    'inventory_items', [])
+                # log.debug('Inventory items response: %s', inventory_items)
+                for item in inventory_items:
+                    if str(catch_id) in str(item):
+                        p_data = item['inventory_item_data']['pokemon_data']
+                        pokemon_caught = {
+                            'pokemon_id': p_data['pokemon_id'],
+                            'move_1': p_data['move_1'],
+                            'move_2': p_data['move_2'],
+                            'height': p_data['height_m'],
+                            'weight': p_data['weight_kg'],
+                            'gender': p_data['pokemon_display']['gender'],
+                            'cp': 0
+                        }
+                        time.sleep(random.uniform(4, 6))
+                        if request_release_pokemon(api, catch_id):
+                            log.info('Released caught pokemon %s.', catch_id)
+                        else:
+                            log.warning('Unable to release pokemon %s.',
+                                        catch_id)
+
+                        return pokemon_caught
+
+                if catch_status == 2:
+                    log.info('Catch attempt %d failed. Pokemon {} broke free.',
+                             attempts, pokemon_id)
+                if catch_status == 3:
+                    log.info('Catch attempt %d failed. Pokemon {} fled!',
+                             attempts, pokemon_id)
+                    break
+                if catch_status == 4:
+                    log.info('Catch attempt %d failed. Pokemon {} dodged!',
+                             attempts, pokemon_id)
+
+        attempts += 1
     return False
 
 
@@ -495,14 +574,14 @@ def request_level_up_rewards(api, account):
     return False
 
 
-def request_catch_pokemon(api, pokemon, ball_id):
+def request_catch_pokemon(api, encounter_id, spawnpoint_id, ball_id=1):
     try:
         req = api.create_request()
         res = req.catch_pokemon(
-            encounter_id=pokemon['encounter_id'],
-            pokeball=1,
+            encounter_id=encounter_id,
+            pokeball=ball_id,
             normalized_reticle_size=1.950,
-            spawn_point_id=pokemon['spawnpoin_id'],
+            spawn_point_id=spawnpoint_id,
             hit_pokemon=1,
             spin_modifier=1.0,
             normalized_hit_position=1.0)
@@ -517,5 +596,27 @@ def request_catch_pokemon(api, pokemon, ball_id):
         return res
     except Exception as e:
         log.warning('Exception while catching Pokemon: %s', repr(e))
+
+    return False
+
+
+def request_release_pokemon(api, pokemon_id):
+    try:
+        req = api.create_request()
+        res = req.release_pokemon(pokemon_id=pokemon_id)
+        res = req.check_challenge()
+        res = req.get_inventory()
+        res = req.call()
+
+        release_pokemon = res['responses'].get('RELEASE_POKEMON', {})
+        if release_pokemon:
+            release_result = release_pokemon.get('result', 0)
+            if release_result == 1:
+                return True
+            else:
+                log.warning('Failed to release pokemon %s. Result code: %s.',
+                            pokemon_id, release_result)
+    except Exception as e:
+        log.error('Exception while releasing Pokemon: %s', repr(e))
 
     return False

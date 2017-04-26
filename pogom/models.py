@@ -33,7 +33,7 @@ from .utils import get_pokemon_name, get_pokemon_rarity, get_pokemon_types, \
     clear_dict_response
 from .transform import transform_from_wgs_to_gcj, get_new_coords
 from .customLog import printPokemon
-from .account import get_player_level
+from .account import handle_pokestop, catch_pokemon
 log = logging.getLogger(__name__)
 
 args = get_args()
@@ -1762,10 +1762,11 @@ def hex_bounds(center, steps=None, radius=None):
 
 # todo: this probably shouldn't _really_ be in "models" anymore, but w/e.
 def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
-              api, now_date):
+              api, now_date, account, status):
     pokemon = {}
+    pokemon_caught = []
     pokestops = {}
-    pokestops_in_range = {}
+    pokestops_visited = []
     gyms = {}
     skipped = 0
     stopsskipped = 0
@@ -1784,8 +1785,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
     # Consolidate the individual lists in each cell into two lists of Pokemon
     # and a list of forts.
     cells = map_dict['responses']['GET_MAP_OBJECTS']['map_cells']
-    # Get the level for the pokestop spin, and to send to webhook.
-    level = get_player_level(map_dict)
 
     # Helping out the GC.
     if 'GET_INVENTORY' in map_dict['responses']:
@@ -1994,6 +1993,19 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     'gender': pokemon_info['pokemon_display']['gender'],
                 })
 
+                if account['level'] < args.account_max_level:
+                    pokemon_id = p['pokemon_data']['pokemon_id']
+                    if pokemon_id in args.pokemon_catch_list:
+                        # Try to catch pokemon.
+                        caught = catch_pokemon(status, api, account, p)
+                        if caught:
+                            pokemon_caught.append(caught['pokemon_id'])
+                            if caught['pokemon_id'] == 132:
+                                log.info('Pokemon %s was a ditto! Updating ' +
+                                         'pokemon data.', pokemon_id)
+                            # DEBUG: This next line should be identented.
+                            pokemon[p['encounter_id']].update(caught)
+
             if args.webhooks:
                 pokemon_id = p['pokemon_data']['pokemon_id']
                 if (pokemon_id in args.webhook_whitelist or
@@ -2009,7 +2021,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         'seconds_until_despawn': seconds_until_despawn,
                         'spawn_start': start_end[0],
                         'spawn_end': start_end[1],
-                        'player_level': level
+                        'player_level': account['level']
                     })
                     wh_update_queue.put(('pokemon', wh_poke))
 
@@ -2027,15 +2039,15 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
         for f in forts:
             if config['parse_pokestops'] and f.get('type') == 1:  # Pokestops.
-                distance = 0.038
-                pokestop_loc = (f['latitude'], f['longitude'])
-                if in_radius(step_location, pokestop_loc, distance):
-                    log.debug('Pokestop: %s is in range.', f['id'])
-                    pokestops_in_range[f['id']] = {
-                        'pokestop_id': f['id'],
-                        'latitude': f['latitude'],
-                        'longitude': f['longitude']
-                    }
+                # Try to spin any pokestops within maximum range (38 meters).
+                if account['level'] < args.account_max_level:
+                    distance = 0.038
+                    pokestop_loc = (f['latitude'], f['longitude'])
+                    if in_radius(step_location, pokestop_loc, distance):
+                        log.debug('Pokestop: %s is in range.', f['id'])
+                        if handle_pokestop(status, api, account, f):
+                            pokestops_visited.append(f['id'])
+
                 if 'active_fort_modifier' in f:
                     lure_expiration = (datetime.utcfromtimestamp(
                         f['last_modified_timestamp_ms'] / 1000.0) +
@@ -2194,7 +2206,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
         # a possible speed violation.
         return {
             'count': wild_pokemon_count + forts_count,
-            'pokestops': pokestops_in_range,
             'gyms': gyms,
             'sp_id_list': sp_id_list,
             'bad_scan': True,
@@ -2203,7 +2214,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
     return {
         'count': wild_pokemon_count + forts_count,
-        'pokestops': pokestops_in_range,
         'gyms': gyms,
         'sp_id_list': sp_id_list,
         'bad_scan': False,

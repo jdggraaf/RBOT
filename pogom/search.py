@@ -462,7 +462,11 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         account['walked'] = 0.0
         # account['last_active'] = datetime.utcnow()
         # account['last_location'] = None
+        account['last_cleanup'] = time.time()
         account['used_pokestops'] = {}
+        account['hour_throws'] = 0
+        account['hour_captures'] = 0
+        account['hour_spins'] = 0
         account_queue.put(account)
 
     # Create a list for failed accounts.
@@ -1106,8 +1110,8 @@ def search_worker_thread(args, account_queue, account_failures,
                         # Parse stats from response into the account.
                         parse_account_stats(args, api, response_dict, account)
 
-                    parsed = parse_map(args, response_dict, step_location,
-                                       dbq, whq, api, scan_date)
+                    parsed = parse_map(args, response_dict, step_location, dbq,
+                                       whq, api, scan_date, account, status)
 
                     del response_dict
                     scheduler.task_done(status, parsed)
@@ -1141,20 +1145,6 @@ def search_worker_thread(args, account_queue, account_failures,
 
                 if account['first_login']:
                     account['first_login'] = False
-
-                # Try to spin any pokestops within maximum range (38 meters).
-                if account['level'] < args.account_max_level and parsed:
-                    for pokestop in parsed.get('pokestops', {}).values():
-                        try:
-                            handle_pokestop(status, api, account, pokestop)
-                        except Exception as e:
-                            status['message'] = ('Failed to spin Pokestop ' +
-                                                 '{} at {:6f},{:6f}. ').format(
-                                                    pokestop['pokestop_id'],
-                                                    step_location[0],
-                                                    step_location[1])
-                            log.warning('%s Exception: %s', status['message'],
-                                        repr(e))
 
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:
