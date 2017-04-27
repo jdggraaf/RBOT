@@ -452,9 +452,10 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         account['max_items'] = 350
         account['max_pokemons'] = 250
         account['level'] = 1
-        account['items'] = []
+        account['items'] = {}
         account['item_count'] = 0
-        account['nickname'] = ''
+        account['pokemons'] = {}
+        # account['nickname'] = ''
         account['level'] = 0
         account['experience'] = 0
         account['encounters'] = 0

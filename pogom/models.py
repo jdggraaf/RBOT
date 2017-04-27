@@ -1764,7 +1764,7 @@ def hex_bounds(center, steps=None, radius=None):
 def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
               api, now_date, account, status):
     pokemon = {}
-    pokemon_caught = []
+    pokemons_caught = []
     pokestops = {}
     pokestops_visited = []
     gyms = {}
@@ -1979,13 +1979,14 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     in encounter_result['responses']['ENCOUNTER']):
                 pokemon_info = encounter_result['responses'][
                     'ENCOUNTER']['wild_pokemon']['pokemon_data']
+                iv_attack = pokemon_info.get('individual_attack', 0)
+                iv_defense = pokemon_info.get('individual_defense', 0)
+                iv_stamina = pokemon_info.get('individual_stamina', 0)
+
                 pokemon[p['encounter_id']].update({
-                    'individual_attack': pokemon_info.get(
-                        'individual_attack', 0),
-                    'individual_defense': pokemon_info.get(
-                        'individual_defense', 0),
-                    'individual_stamina': pokemon_info.get(
-                        'individual_stamina', 0),
+                    'individual_attack': iv_attack,
+                    'individual_defense': iv_defense,
+                    'individual_stamina': iv_stamina,
                     'move_1': pokemon_info['move_1'],
                     'move_2': pokemon_info['move_2'],
                     'height': pokemon_info['height_m'],
@@ -2000,16 +2001,11 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     if throws < args.account_max_throws and \
                             captures <= args.account_max_captures and \
                             pokemon_id in args.pokemon_catch_list:
-
+                        iv = int((iv_attack + iv_defense + iv_stamina) *
+                                 100 / 45.0)
                         # Try to catch pokemon.
-                        caught = catch_pokemon(status, api, account, p)
-                        if caught:
-                            log.debug('Caught Pokemon: %s', caught)
-                            pokemon_caught.append(caught['pokemon_id'])
-                            if caught['pokemon_id'] == 132:
-                                log.info('Pokemon %s was a ditto! Updating ' +
-                                         'pokemon data.', pokemon_id)
-                                pokemon[p['encounter_id']].update(caught)
+                        if catch_pokemon(status, api, account, p, iv):
+                            pokemons_caught.append(pokemon_id)
 
             if args.webhooks:
                 pokemon_id = p['pokemon_data']['pokemon_id']

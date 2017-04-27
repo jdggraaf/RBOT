@@ -70,7 +70,6 @@ def check_login(args, account, api, position, proxy_url):
 # Check if all important tutorial steps have been completed.
 def get_player_state(api, account):
     try:
-        time.sleep(random.uniform(1, 2))
         req = api.create_request()
         req.get_player(
             player_locale={
@@ -79,6 +78,7 @@ def get_player_state(api, account):
                 'timezone': 'America/Los_Angeles'})
         res = req.check_challenge()
         res = req.call()
+        time.sleep(random.uniform(2, 3))
 
         get_player = res.get('responses', {}).get('GET_PLAYER', {})
         warning_state = get_player.get('warn', None)
@@ -316,20 +316,23 @@ def parse_account_stats(args, api, response_dict, account):
     return False
 
 
-def parse_player_pokemons(response_dict):
-    pokemons = {}
+def parse_player_pokemons(response_dict, account):
     # Check inventory for Pokemon data.
     inventory_items = response_dict['responses'].get(
         'GET_INVENTORY', {}).get(
         'inventory_delta', {}).get(
         'inventory_items', [])
 
+    pokemons = 0
     for item in inventory_items:
         if 'pokemon_data' in item['inventory_item_data']:
+            pokemons += 1
             p_data = item['inventory_item_data']['pokemon_data']
             p_id = p_data.get('id', 0L)
-            if p_id:
-                pokemons[p_id] = {
+            pokemon_id = p_data.get('pokemon_id', 0)
+            if p_id and pokemon_id and p_id not in account['pokemons']:
+                # Careful with this dictionary, used to update Pokemon data.
+                account['pokemons'][p_id] = {
                     'pokemon_id': p_data['pokemon_id'],
                     'move_1': p_data['move_1'],
                     'move_2': p_data['move_2'],
@@ -450,9 +453,39 @@ def handle_pokestop(status, api, account, pokestop):
     return False
 
 
+def recycle_pokemons(status, api, account):
+    # Randomly select a Pokemon to release
+    total_pokemons = len(account['pokemons'])
+    if total_pokemons < account['max_pokemons'] * 0.9:
+        release_count = int(total_pokemons * 0.05)
+        pokemon_ids = random.sample(account['pokemons'].keys(), release_count)
+
+        for pokemon_id in pokemon_ids:
+            time.sleep(random.uniform(4, 6))
+
+            if request_release_pokemon(api, pokemon_id):
+                status['message'] = (
+                    'Released Pokemon {}.').format(
+                        pokemon_id)
+                log.info(status['message'])
+            else:
+                status['message'] = (
+                    'Unable to release Pokemon {}.').format(
+                        pokemon_id)
+                log.warning(status['message'])
+
+                return False
+
+    return True
+
+
 # https://docs.pogodev.org/api/messages/CatchPokemonProto/
 # https://docs.pogodev.org/api/messages/CatchPokemonOutProto/
-def catch_pokemon(status, api, account, pokemon):
+# TODO: add status messages and improve account statistics.
+# TODO: finish pokemon recyler.
+# TODO: use berries on encounters.
+# TODO: only recycle pokemon after catching batch.
+def catch_pokemon(status, api, account, pokemon, iv):
     pokemon_id = pokemon['pokemon_data']['pokemon_id']
     encounter_id = pokemon['encounter_id']
     spawnpoint_id = pokemon['spawn_point_id']
@@ -485,7 +518,6 @@ def catch_pokemon(status, api, account, pokemon):
 
         catch_pokemon = res['responses'].get('CATCH_POKEMON', {})
         if catch_pokemon:
-
             catch_status = catch_pokemon.get('status', -1)
 
             if catch_status <= 0:
@@ -499,32 +531,36 @@ def catch_pokemon(status, api, account, pokemon):
 
                 catch_id = catch_pokemon['captured_pokemon_id']
                 status['message'] = (
-                    'Caught Pokemon #{} {} with ball #{}!').format(
+                    'Caught Pokemon #{} {} with ball #{}').format(
                         pokemon_id, catch_id, ball_id)
                 log.info(status['message'])
 
                 # Check if caught Pokemon is a Ditto.
-                inventory_items = res['responses'].get(
-                    'GET_INVENTORY', {}).get(
-                    'inventory_delta', {}).get(
-                    'inventory_items', [])
+                # Parse Pokemons in response and update account inventory.
+                parsed_pokemons = parse_player_pokemons(res, account)
 
-                pokemon_caught = {}
-                for item in inventory_items:
-                    if 'pokemon_data' in item['inventory_item_data']:
-                        p_data = item['inventory_item_data']['pokemon_data']
-                        p_id = p_data.get('id', 0L)
-                        if catch_id == p_id:
-                            # TODO: maybe we can update pokemon here.
-                            pokemon_caught = {
-                                'pokemon_id': p_data['pokemon_id'],
-                                'move_1': p_data['move_1'],
-                                'move_2': p_data['move_2'],
-                                'height': p_data['height_m'],
-                                'weight': p_data['weight_kg'],
-                                'gender': p_data['pokemon_display']['gender'],
-                                'cp': p_data['cp']
-                            }
+                if parsed_pokemons and catch_id in account['pokemons']:
+                    pokemon_caught = account['pokemons'][catch_id]
+                    # log.debug('Found caught Pokemon %s: %s',
+                    #          catch_id, pokemon_caught)
+
+                    if pokemon_caught['pokemon_id'] == 132:
+                        status['message'] = (
+                            'Caught Pokemon #{} {} was a Ditto!').format(
+                                pokemon_id, catch_id)
+                        log.info(status['message'])
+                        # Update Pokemon information.
+                        pokemon.update(pokemon_caught)
+                else:
+                    log.error('Pokemon %s not found in inventory.', catch_id)
+                    return False
+
+                # Don't release all Pokemon.
+                if iv > 93 and random.random() < 0.7:
+                    log.info('Kept Pokemon #%d (IV %d%) in inventory (%d/%d).',
+                             pokemon_id, iv,
+                             len(account['pokemons']), account['max_pokemons'])
+                    return True
 
                 time.sleep(random.uniform(4, 6))
 
@@ -533,18 +569,13 @@ def catch_pokemon(status, api, account, pokemon):
                         'Released Pokemon {} after capture.').format(
                             catch_id)
                     log.info(status['message'])
+                    return True
                 else:
                     status['message'] = (
                         'Unable to release captured Pokemon {}.').format(
                             catch_id)
                     log.warning(status['message'])
-
-                if not pokemon_caught:
-                    log.error('Pokemon %s not found in inventory.', catch_id)
                     return False
-
-                return pokemon_caught
-
             if catch_status == 2:
                 status['message'] = (
                     'Catch attempt {} failed. Pokemon #{} broke free.').format(
@@ -628,17 +659,59 @@ def request_level_up_rewards(api, account):
     return False
 
 
+# https://github.com/PokemonGoF/PokemonGo-Bot/blob/master/pokemongo_bot/cell_workers/pokemon_catch_worker.py
+# Perfect Throw:
+# normalized_reticle_size=1.950
+# normalized_hit_position=1.0
+# spin_modifier=1.0
+def randomize_throw(excellent=0.20, great=0.5, nice=0.2, curveball=0.8):
+    throw_parameters = {}
+
+    random_throw = random.random()
+    great += excellent
+    nice += great
+
+    if random_throw <= excellent:
+        throw_parameters['name'] = 'Excellent'
+        throw_parameters['reticle_size'] = 1.70 + 0.25 * random.random()
+        throw_parameters['hit_position'] = 1.0
+    elif random_throw <= great:
+        throw_parameters['name'] = 'Great'
+        throw_parameters['reticle_size'] = 1.30 + 0.399 * random.random()
+        throw_parameters['hit_position'] = 1.0
+    elif random_throw <= nice:
+        throw_parameters['name'] = 'Nice'
+        throw_parameters['reticle_size'] = 1.00 + 0.299 * random.random()
+        throw_parameters['hit_position'] = 1.0
+    else:
+        # Not a any kind of special throw, let's throw a normal one.
+        # Here the reticle size doesn't matter, we scored out of it.
+        throw_parameters['name'] = 'Normal'
+        throw_parameters['reticle_size'] = 1.25 + 0.70 * random.random()
+        throw_parameters['hit_position'] = 0.0
+
+    if curveball < random.random():
+        throw_parameters['spin_modifier'] = 0.499 * random.random()
+    else:
+        throw_parameters['name'] += ' Curveball'
+        throw_parameters['spin_modifier'] = 0.55 + 0.45 * random.random()
+
+    return throw_parameters
+
+
 def request_catch_pokemon(api, encounter_id, spawnpoint_id, ball_id=1):
     try:
+        throw_parameters = randomize_throw()
+        # log.debug('Throw parameters: %s', throw_parameters)
         req = api.create_request()
         res = req.catch_pokemon(
             encounter_id=encounter_id,
             pokeball=ball_id,
-            normalized_reticle_size=1.950,
+            normalized_reticle_size=throw_parameters['reticle_size'],
             spawn_point_id=spawnpoint_id,
             hit_pokemon=1,
-            spin_modifier=1.0,
-            normalized_hit_position=1.0)
+            spin_modifier=throw_parameters['spin_modifier'],
+            normalized_hit_position=throw_parameters['hit_position'])
         res = req.check_challenge()
         res = req.get_hatched_eggs()
         res = req.get_inventory()
@@ -650,6 +723,28 @@ def request_catch_pokemon(api, encounter_id, spawnpoint_id, ball_id=1):
         return res
     except Exception as e:
         log.warning('Exception while catching Pokemon: %s', repr(e))
+
+    return False
+
+
+def request_use_item_encounter(api, encounter_id, spawnpoint_id, berry_id=1):
+    try:
+        req = api.create_request()
+        res = req.use_item_encounter(
+            item=berry_id,
+            encounter_id=encounter_id,
+            spawn_point_guid=spawnpoint_id)
+        res = req.check_challenge()
+        # res = req.get_hatched_eggs()
+        res = req.get_inventory()
+        # res = req.check_awarded_badges()
+        # res = req.download_settings()
+        # res = req.get_buddy_walked()
+        res = req.call()
+
+        return res
+    except Exception as e:
+        log.warning('Exception while using a Berry on a Pokemon: %s', repr(e))
 
     return False
 
