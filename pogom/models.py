@@ -2001,19 +2001,22 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     pokemon[p['encounter_id']]['form'] = pokemon_info[
                         'pokemon_display'].get('form', None)
 
+                # Try to catch wild Pokemon.
                 if account['level'] < args.account_max_level:
                     pokemon_id = p['pokemon_data']['pokemon_id']
                     throws = account['hour_throws']
                     captures = account['hour_captures']
-                    if throws < args.account_max_throws and \
-                            captures <= args.account_max_captures and \
-                            pokemon_id in args.pokemon_catch_list:
+                    if (throws < args.account_max_throws and
+                            captures <= args.account_max_captures and
+                            pokemon_id in args.pokemon_catch_list):
                         iv = int((iv_attack + iv_defense + iv_stamina) *
                                  100 / 45.0)
-                        # Try to catch pokemon.
-                        if catch_pokemon(status, api, account, p, iv):
-                            pokemons_caught.append(pokemon_id)
-
+                        try:
+                            if catch_pokemon(status, api, account, p, iv):
+                                pokemons_caught.append(pokemon_id)
+                        except Exception as e:
+                            log.warning('Exception catching Pokemon: %s',
+                                        repr(e))
             if args.webhooks:
                 pokemon_id = p['pokemon_data']['pokemon_id']
                 if (pokemon_id in args.webhook_whitelist or
@@ -2054,9 +2057,12 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         pokestop_loc = (f['latitude'], f['longitude'])
                         if in_radius(step_location, pokestop_loc, distance):
                             log.debug('Pokestop: %s is in range.', f['id'])
-                            if handle_pokestop(status, api, account, f):
-                                pokestops_visited.append(f['id'])
-
+                            try:
+                                if handle_pokestop(status, api, account, f):
+                                    pokestops_visited.append(f['id'])
+                            except Exception as e:
+                                log.warning('Exception visiting Pokestop: %s',
+                                            repr(e))
                 if 'active_fort_modifier' in f:
                     lure_expiration = (datetime.utcfromtimestamp(
                         f['last_modified_timestamp_ms'] / 1000.0) +

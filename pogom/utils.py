@@ -689,6 +689,16 @@ def get_args():
             args.encounter_whitelist = [int(i) for i in
                                         args.encounter_whitelist]
 
+        # Make sure that Pokemons on catch list are encountered.
+        if args.pokemon_catch_list:
+            pcl = args.pokemon_catch_list
+            ebl = args.encounter_blacklist
+            ewl = args.encounter_whitelist
+
+            args.encounter_blacklist = [x for x in ebl if x not in pcl]
+            if ewl:
+                args.encounter_whitelist.extend(x for x in pcl if x not in ewl)
+
         if args.webhook_whitelist_file:
             with open(args.webhook_whitelist_file) as f:
                 args.webhook_whitelist = [get_pokemon_id(name) for name in
