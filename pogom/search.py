@@ -26,6 +26,7 @@ import random
 import time
 import copy
 import requests
+import terminalsize
 
 from datetime import datetime
 from threading import Thread, Lock
@@ -35,23 +36,18 @@ from collections import deque
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
-from pgoapi import PGoApi
 from pgoapi.utilities import f2i
 from pgoapi import utilities as util
 from pgoapi.hash_server import HashServer
 
 from .models import parse_map, GymDetails, parse_gyms, MainWorker, WorkerStatus
-from .fakePogoApi import FakePogoApi
-from .utils import now, generate_device_info, clear_dict_response
+from .utils import now, clear_dict_response
 from .transform import get_new_coords, jitter_location
-from .account import check_login, get_player_state, complete_tutorial, \
-                     parse_account_stats
+from .account import (setup_api, check_login, get_player_state,
+                      complete_tutorial, parse_account_stats)
 from .captcha import captcha_overseer_thread, handle_captcha
-
 from .proxy import get_new_proxy
-
-import schedulers
-import terminalsize
+from .schedulers import KeyScheduler, SchedulerFactory
 
 log = logging.getLogger(__name__)
 
@@ -496,7 +492,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     # Create the key scheduler.
     if args.hash_key:
         log.info('Enabling hashing key scheduler...')
-        key_scheduler = schedulers.KeyScheduler(args.hash_key)
+        key_scheduler = KeyScheduler(args.hash_key)
 
     if(args.print_status):
         log.info('Starting status printer thread...')
@@ -543,7 +539,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
             search_items_queue = Queue()
             # Create the appropriate type of scheduler to handle the search
             # queue.
-            scheduler = schedulers.SchedulerFactory.get_scheduler(
+            scheduler = SchedulerFactory.get_scheduler(
                 args.scheduler, [search_items_queue], threadStatus, args)
 
             scheduler_array.append(scheduler)
@@ -848,7 +844,7 @@ def search_worker_thread(args, account_queue, account_failures,
     # This reinitializes the API and grabs a new account from the queue.
     while True:
         try:
-            # Force storing of previous worker info to keep consistency
+            # Force storing of previous worker info to keep consistency.
             if 'starttime' in status:
                 dbq.put((WorkerStatus, {0: WorkerStatus.db_format(status)}))
 
@@ -891,31 +887,7 @@ def search_worker_thread(args, account_queue, account_failures,
             consecutive_noitems = 0
 
             # Create the API instance this will use.
-            if args.mock != '':
-                api = FakePogoApi(args.mock)
-            else:
-                device_info = generate_device_info()
-                api = PGoApi(device_info=device_info)
-
-            # New account - new proxy.
-            if args.proxy:
-                # If proxy is not assigned yet or if proxy-rotation is defined
-                # - query for new proxy.
-                if ((not status['proxy_url']) or
-                        ((args.proxy_rotation is not None) and
-                         (args.proxy_rotation != 'none'))):
-
-                    proxy_num, status['proxy_url'] = get_new_proxy(args)
-                    if args.proxy_display.upper() != 'FULL':
-                        status['proxy_display'] = proxy_num
-                    else:
-                        status['proxy_display'] = status['proxy_url']
-
-            if status['proxy_url']:
-                log.debug('Using proxy %s', status['proxy_url'])
-                api.set_proxy({
-                    'http': status['proxy_url'],
-                    'https': status['proxy_url']})
+            api = setup_api(args, status)
 
             # The forever loop for the searches.
             while True:
@@ -960,7 +932,7 @@ def search_worker_thread(args, account_queue, account_failures,
                 # If used proxy disappears from "live list" after background
                 # checking - switch account but do not freeze it (it's not an
                 # account failure).
-                if (args.proxy) and (not status['proxy_url'] in args.proxy):
+                if args.proxy and status['proxy_url'] not in args.proxy:
                     status['message'] = (
                         'Account {} proxy {} is not in a live list any ' +
                         'more. Switching accounts...').format(
