@@ -419,6 +419,7 @@ function pokemonLabel(item) {
     var sta = item['individual_stamina']
     var pMove1 = (moves[item['move_1']] !== undefined) ? i8ln(moves[item['move_1']]['name']) : 'gen/unknown'
     var pMove2 = (moves[item['move_2']] !== undefined) ? i8ln(moves[item['move_2']]['name']) : 'gen/unknown'
+    var cp = item['cp']
     var weight = item['weight']
     var height = item['height']
     var gender = item['gender']
@@ -429,6 +430,14 @@ function pokemonLabel(item) {
     })
 
     var details = ''
+
+    if (cp !== null) {
+        details += `
+            <div>
+                CP: ${cp}
+            </div>
+            `
+    }
     if (atk !== null && def !== null && sta !== null) {
         var iv = getIv(atk, def, sta)
         details = `

@@ -20,13 +20,9 @@ import requests
 from datetime import datetime
 from threading import Thread
 
-from pgoapi import PGoApi
-from .fakePogoApi import FakePogoApi
-
 from .models import Token
 from .transform import jitter_location
-from .account import check_login
-from .proxy import get_new_proxy
+from .account import setup_api, check_login
 from .utils import now
 
 
@@ -112,32 +108,21 @@ def captcha_solver_thread(args, account_queue, account_captchas, hash_key,
                          account['username'])
     log.info(status['message'])
 
-    if args.mock != '':
-        api = FakePogoApi(args.mock)
-    else:
-        api = PGoApi()
-
-    if hash_key:
-        log.debug('Using key {} for solving this captcha.'.format(hash_key))
-        api.activate_hash_server(hash_key)
-
-    proxy_url = False
-    if args.proxy:
-        # Try to fetch a new proxy
-        proxy_num, proxy_url = get_new_proxy(args)
-
-        if proxy_url:
-            log.debug('Using proxy %s', proxy_url)
-            api.set_proxy({'http': proxy_url, 'https': proxy_url})
+    # Create the API instance this will use.
+    api = setup_api(args, status)
 
     location = account['last_location']
-
     if not args.no_jitter:
         # Jitter location before uncaptcha attempt
         location = jitter_location(location)
 
     api.set_position(*location)
-    check_login(args, account, api, location, proxy_url)
+
+    if hash_key:
+        log.debug('Using key {} for solving this captcha.'.format(hash_key))
+        api.activate_hash_server(hash_key)
+
+    check_login(args, account, api, location, status['proxy_url'])
 
     wh_message = {'status_name': args.status_name,
                   'status': 'error',

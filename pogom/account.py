@@ -5,9 +5,12 @@ import logging
 import time
 import random
 
+from pgoapi import PGoApi
 from pgoapi.exceptions import AuthException
 
-from .utils import in_radius
+from .fakePogoApi import FakePogoApi
+from .utils import in_radius, generate_device_info
+from .proxy import get_new_proxy
 
 log = logging.getLogger(__name__)
 
@@ -16,6 +19,39 @@ class TooManyLoginAttempts(Exception):
     pass
 
 
+# Create the API object that'll be used to scan.
+def setup_api(args, status):
+    # Create the API instance this will use.
+    if args.mock != '':
+        api = FakePogoApi(args.mock)
+    else:
+        device_info = generate_device_info()
+        api = PGoApi(device_info=device_info)
+
+    # New account - new proxy.
+    if args.proxy:
+        # If proxy is not assigned yet or if proxy-rotation is defined
+        # - query for new proxy.
+        if ((not status['proxy_url']) or
+                ((args.proxy_rotation is not None) and
+                 (args.proxy_rotation != 'none'))):
+
+            proxy_num, status['proxy_url'] = get_new_proxy(args)
+            if args.proxy_display.upper() != 'FULL':
+                status['proxy_display'] = proxy_num
+            else:
+                status['proxy_display'] = status['proxy_url']
+
+    if status['proxy_url']:
+        log.debug('Using proxy %s', status['proxy_url'])
+        api.set_proxy({
+            'http': status['proxy_url'],
+            'https': status['proxy_url']})
+
+    return api
+
+
+# Use API to check the login status, and retry the login if possible.
 def check_login(args, account, api, position, proxy_url):
 
     # Logged in? Enough time left? Cool!
