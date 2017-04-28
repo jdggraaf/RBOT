@@ -45,7 +45,7 @@ from .fakePogoApi import FakePogoApi
 from .utils import now, generate_device_info, clear_dict_response
 from .transform import get_new_coords, jitter_location
 from .account import check_login, get_player_state, complete_tutorial, \
-                     parse_account_stats, handle_pokestop
+                     parse_account_stats
 from .captcha import captcha_overseer_thread, handle_captcha
 
 from .proxy import get_new_proxy
@@ -1119,9 +1119,8 @@ def search_worker_thread(args, account_queue, account_failures,
                         time.sleep(3)
                         break
 
-                    if args.account_max_level > 0:
-                        # Parse stats from response into the account.
-                        parse_account_stats(args, api, response_dict, account)
+                    # Parse player data from response into the account.
+                    parse_account_stats(args, api, response_dict, account)
 
                     parsed = parse_map(args, response_dict, step_location, dbq,
                                        whq, api, scan_date, account, status)
