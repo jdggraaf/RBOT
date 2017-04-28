@@ -78,23 +78,25 @@ def get_player_state(api, account):
                 'timezone': 'America/Los_Angeles'})
         res = req.check_challenge()
         res = req.call()
+
         time.sleep(random.uniform(2, 3))
-
         get_player = res.get('responses', {}).get('GET_PLAYER', {})
-        warning_state = get_player.get('warn', None)
-        banned_state = get_player.get('banned', False)
-        player_data = get_player.get('player_data', {})
-        tutorial_state = player_data.get('tutorial_state', [])
-        max_items = player_data.get('max_item_storage', 350)
-        max_pokemons = player_data.get('max_pokemon_storage', 250)
+        if get_player:
+            warning_state = get_player.get('warn', None)
+            banned_state = get_player.get('banned', False)
 
-        account['warning'] = warning_state
-        account['banned'] = banned_state
-        account['tutorials'] = tutorial_state
-        account['max_items'] = max_items
-        account['max_pokemons'] = max_pokemons
+            player_data = get_player.get('player_data', {})
+            tutorial_state = player_data.get('tutorial_state', [])
+            max_items = player_data.get('max_item_storage', 350)
+            max_pokemons = player_data.get('max_pokemon_storage', 250)
 
-        return True
+            account['warning'] = warning_state
+            account['banned'] = banned_state
+            account['tutorials'] = tutorial_state
+            account['max_items'] = max_items
+            account['max_pokemons'] = max_pokemons
+
+            return True
     except Exception as e:
         log.warning('Exception while getting player state: %s', repr(e))
 
@@ -453,11 +455,12 @@ def handle_pokestop(status, api, account, pokestop):
     return False
 
 
-def recycle_pokemons(status, api, account):
+# Randomly picks Pokemons to release based on a percentage of total pokemons.
+def recycle_pokemons(status, api, account, percentage=0.03):
     # Randomly select a Pokemon to release
     total_pokemons = len(account['pokemons'])
     if total_pokemons < account['max_pokemons'] * 0.9:
-        release_count = int(total_pokemons * 0.05)
+        release_count = int(total_pokemons * percentage)
         pokemon_ids = random.sample(account['pokemons'].keys(), release_count)
 
         for pokemon_id in pokemon_ids:
@@ -482,15 +485,24 @@ def recycle_pokemons(status, api, account):
 # https://docs.pogodev.org/api/messages/CatchPokemonProto/
 # https://docs.pogodev.org/api/messages/CatchPokemonOutProto/
 # TODO: add status messages and improve account statistics.
-# TODO: finish pokemon recyler.
 # TODO: use berries on encounters.
-# TODO: only recycle pokemon after catching batch.
 def catch_pokemon(status, api, account, pokemon, iv):
     pokemon_id = pokemon['pokemon_data']['pokemon_id']
     encounter_id = pokemon['encounter_id']
     spawnpoint_id = pokemon['spawn_point_id']
 
-    # Try to catch pokemon, but don't get stuck.
+    total_pokemons = len(account['pokemons'])
+    max_pokemons = account['max_pokemons']
+
+    log.info('Account %s inventory has %d / %d Pokemons.',
+             account['username'], total_pokemons, max_pokemons)
+
+    release_ids = []
+    if total_pokemons < max_pokemons * 0.9:
+        release_count = int(total_pokemons * 0.03)  # should be around 9
+        release_ids = random.sample(account['pokemons'].keys(), release_count)
+
+    # Try to catch Pokemon, but don't get stuck.
     attempts = 1
     while attempts < 4:
         # Select Pokeball type to throw.
@@ -541,8 +553,8 @@ def catch_pokemon(status, api, account, pokemon, iv):
 
                 if parsed_pokemons and catch_id in account['pokemons']:
                     pokemon_caught = account['pokemons'][catch_id]
-                    # log.debug('Found caught Pokemon %s: %s',
-                    #          catch_id, pokemon_caught)
+                    log.debug('Found caught Pokemon %s: %s',
+                              catch_id, pokemon_caught)
 
                     if pokemon_caught['pokemon_id'] == 132:
                         status['message'] = (
@@ -556,7 +568,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
                     return False
 
                 # Don't release all Pokemon.
-                if iv > 93 and random.random() < 0.7:
+                if not release_ids and iv > 93 and random.random() < 0.75:
                     log.info('Kept Pokemon #%d (IV %d%) in inventory (%d/%d).',
                              pokemon_id, iv,
                              len(account['pokemons']), account['max_pokemons'])
@@ -564,7 +576,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
 
                 time.sleep(random.uniform(4, 6))
 
-                if request_release_pokemon(api, catch_id):
+                if request_release_pokemon(api, catch_id, release_ids):
                     status['message'] = (
                         'Released Pokemon {} after capture.').format(
                             catch_id)
@@ -749,10 +761,13 @@ def request_use_item_encounter(api, encounter_id, spawnpoint_id, berry_id=1):
     return False
 
 
-def request_release_pokemon(api, pokemon_id):
+def request_release_pokemon(api, pokemon_id, release_ids=[]):
     try:
         req = api.create_request()
-        res = req.release_pokemon(pokemon_id=pokemon_id)
+        res = req.release_pokemon(
+            pokemon_id=pokemon_id,
+            pokemon_ids=release_ids
+        )
         res = req.check_challenge()
         res = req.get_inventory()
         res = req.call()
