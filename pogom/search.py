@@ -291,18 +291,18 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                 accounts.append(('Failed', account))
 
             # Determine maximum username length.
-            userlen = 4
+            userlen = 8
             for account_status, acc in accounts:
-                userlen = max(userlen, len(acc.get('username', '')))
+                userlen = max(userlen, len(acc.get('username', '')) + 4)
 
             # Print table header.
-            row_format = '{:7} | {:' + str(userlen) + '} | {:5} | {:>8} | ' \
-                '{:10} | {:6} | {:8} | {:5} | {:>10} | {:>7} |'
+            status = '{:7} | {:' + str(userlen) + '} | {:3} | {:>7} | {:>5} ' \
+                '| {:10} | {:>9} | {:>7} | {:8} | {:7} | {:9} | {:>6} | {:7}'
             status_text.append(
-                row_format.format(
-                    'Status', 'User', 'Level', 'XP', 'Encounters', 'Throws',
-                    'Captures', 'Spins', 'Walked', 'Warning'))
-
+                status.format(
+                    'Status', 'Username', 'LVL', 'XP', 'XP/h', 'Encounters',
+                    'Walked', 'Throws', 'Throws/h', 'Catches', 'Catches/h',
+                    'Spins', 'Spins/h'))
             # Get the terminal size.
             width, height = terminalsize.get_terminal_size()
             # Queue and overseer take 2 lines.  Switch message takes up 2
@@ -334,17 +334,25 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                     continue
                 if current_line > end_line:
                     break
-                status_text.append(row_format.format(
+
+                username = account['username']
+                if account['warning']:
+                    username += ' (!)'
+
+                status_text.append(status.format(
                     account_status,
-                    account['username'],
+                    username,
                     account['level'],
                     account['experience'],
+                    account['hour_experience'],
                     account['encounters'],
-                    account['throws'],
-                    account['captures'],
-                    account['spins'],
                     '{:.1f} km'.format(account['walked']),
-                    account['warning']))
+                    account['throws'],
+                    account['hour_throws'],
+                    account['captures'],
+                    account['hour_captures'],
+                    account['spins'],
+                    account['hour_spins']))
 
         # Print the status_text for the current screen.
         status_text.append((
@@ -463,6 +471,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         # account['last_location'] = None
         account['last_cleanup'] = time.time()
         account['used_pokestops'] = {}
+        account['hour_experience'] = 0
         account['hour_throws'] = 0
         account['hour_captures'] = 0
         account['hour_spins'] = 0

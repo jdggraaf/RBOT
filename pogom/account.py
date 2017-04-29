@@ -273,6 +273,7 @@ def cleanup_account_stats(account, pokestop_timeout):
                  account['username'], account['hour_throws'],
                  account['hour_captures'], account['hour_spins'])
         # These counters are used to limit levelling actions per hour.
+        account['hour_experience'] = 0
         account['hour_throws'] = 0
         account['hour_captures'] = 0
         account['hour_spins'] = 0
@@ -368,9 +369,9 @@ def parse_account_stats(args, api, response_dict, account):
         account['spins'] = player_stats.get('poke_stop_visits', 0)
         account['walked'] = player_stats.get('km_walked', 0.0)
 
-        log.info('Account %s is level %d, has %d Pokemons and %d items: %s',
-                 account['username'], player_level, len(account['pokemons']),
-                 total_items, player_items)
+        log.debug('Account %s is level %d, has %d Pokemons and %d items: %s',
+                  account['username'], player_level, len(account['pokemons']),
+                  total_items, player_items)
 
         return True
 
@@ -461,7 +462,6 @@ def handle_pokestop(status, api, account, pokestop):
 
         time.sleep(random.uniform(2, 3))
         fort_search = request_fort_search(api, pokestop, location)
-        account['hour_spins'] += 1
 
         if fort_search:
             spin_result = fort_search.get('result', -1)
@@ -471,6 +471,11 @@ def handle_pokestop(status, api, account, pokestop):
                 status['message'] = (
                     'Account {} spun Pokestop and received {} XP.').format(
                         account['username'], xp_awarded)
+                log.info(status['message'])
+
+                account['hour_spins'] += 1
+                account['hour_experience'] += xp_awarded
+
             elif spin_result == 2:
                 log.warning('Pokestop out of range.')
             elif spin_result == 3:
@@ -617,12 +622,16 @@ def catch_pokemon(status, api, account, pokemon, iv):
                 log.warning(status['message'])
                 return False
             if catch_status == 1:
-                account['hour_captures'] += 1
-
                 catch_id = catch_pokemon['captured_pokemon_id']
-                status['message'] = 'Caught Pokemon #{} {} with {}.'.format(
-                    pokemon_id, catch_id, ball['name'])
+                xp_awarded = sum(catch_pokemon['capture_award']['xp'])
+
+                status['message'] = (
+                    'Caught Pokemon #{} {} with {} and received {} XP').format(
+                        pokemon_id, catch_id, ball['name'], xp_awarded)
                 log.info(status['message'])
+
+                account['hour_captures'] += 1
+                account['hour_experience'] += xp_awarded
 
                 # Check if caught Pokemon is a Ditto.
                 # Parse Pokemons in response and update account inventory.
@@ -648,7 +657,6 @@ def catch_pokemon(status, api, account, pokemon, iv):
                              len(account['pokemons']), account['max_pokemons'])
                     return True
 
-                time.sleep(random.uniform(4, 6))
                 release_pokemon(status, api, account, catch_id)
                 return True
 
@@ -677,14 +685,15 @@ def release_pokemon(status, api, account, catch_id):
     total_pokemons = len(account['pokemons'])
     max_pokemons = account['max_pokemons']
 
-    log.info('Account %s inventory has %d / %d Pokemons.',
-             account['username'], total_pokemons, max_pokemons)
+    log.debug('Account %s inventory has %d / %d Pokemons.',
+              account['username'], total_pokemons, max_pokemons)
 
     release_ids = []
     if total_pokemons < max_pokemons * 0.9:
         release_count = int(total_pokemons * 0.03)  # should be around 9
         release_ids = random.sample(account['pokemons'].keys(), release_count)
 
+    time.sleep(random.uniform(4, 6))
     if request_release_pokemon(api, catch_id, release_ids):
         release_ids.append(catch_id)
         status['message'] = 'Released Pokemon: {}'.format(release_ids)

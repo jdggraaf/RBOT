@@ -431,18 +431,11 @@ function pokemonLabel(item) {
 
     var details = ''
 
-    if (cp !== null) {
+    if (cp !== null && atk !== null && def !== null && sta !== null) {
+        var iv = getIv(atk, def, sta)
         details += `
             <div>
-                CP: ${cp}
-            </div>
-            `
-    }
-    if (atk !== null && def !== null && sta !== null) {
-        var iv = getIv(atk, def, sta)
-        details = `
-            <div>
-                IV: ${iv.toFixed(1)}% (${atk}/${def}/${sta})
+                CP: ${cp} | IV: ${iv.toFixed(1)}% (${atk}/${def}/${sta})
             </div>
             <div>
                 Moves: ${pMove1} / ${pMove2}
