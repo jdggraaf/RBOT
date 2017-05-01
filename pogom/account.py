@@ -265,6 +265,7 @@ def complete_tutorial(api, account):
     return True
 
 
+# TODO: change to average stats, based on start time.
 def cleanup_account_stats(account, pokestop_timeout):
     # Do hourly account statistics cleanup.
     last_cleanup = account['last_cleanup']
@@ -590,13 +591,17 @@ def catch_pokemon(status, api, account, pokemon, iv):
         else:
             status['message'] = (
                 'Using a {} to catch Pokemon #{} - attempt {}.').format(
-                    pokemon_id, berry['name'], attempts)
+                    berry['name'], pokemon_id, attempts)
             log.info(status['message'])
 
             time.sleep(random.uniform(2, 4))
             res = request_use_item_encounter(api, encounter_id, spawnpoint_id,
                                              berry['id'])
-            log.debug('USE_ITEM: %s', res)
+            if not res:
+                status['message'] = (
+                    'Unable to use {} in encounter #{} - attempt {}.').format(
+                        berry['name'], encounter_id, attempts)
+                log.error(status['message'])
 
         # Randomize throw.
         throw = randomize_throw()
@@ -619,7 +624,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
                 status['message'] = (
                     'Account {} failed to catch Pokemon #{}: {}').format(
                         account['username'], pokemon_id, catch_status)
-                log.warning(status['message'])
+                log.error(status['message'])
                 return False
             if catch_status == 1:
                 catch_id = catch_pokemon['captured_pokemon_id']
@@ -840,7 +845,11 @@ def request_use_item_encounter(api, encounter_id, spawnpoint_id, berry_id=701):
         # res = req.get_buddy_walked()
         res = req.call()
 
-        return res
+        result = res['responses']['USE_ITEM_ENCOUNTER'].get('active_item', 0)
+
+        if result == berry_id:
+            return True
+
     except Exception as e:
         log.warning('Exception while using a Berry on a Pokemon: %s', repr(e))
 
@@ -857,10 +866,14 @@ def request_release_pokemon(api, pokemon_id, release_ids=[]):
             pokemon_ids=release_ids
         )
         res = req.check_challenge()
+        # res = req.get_hatched_eggs()
         res = req.get_inventory()
+        # res = req.check_awarded_badges()
+        # res = req.download_settings()
+        # res = req.get_buddy_walked()
         res = req.call()
 
-        result = res['responses']['RELEASE_POKEMON']['result']
+        result = res['responses']['RELEASE_POKEMON'].get('result', 0)
 
         if result == 1:
             return True
