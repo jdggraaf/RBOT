@@ -100,7 +100,8 @@
 #encounter                      # Set to true to start encounters to pull more info, like IVs or movesets. (default=False)
 #encounter-delay:               # Delay in seconds before starting an encounter. Must not be zero. (default=1)
 #high-lvl-accounts:             # File containing a list high level accounts, in the format "auth_service,username,password"
-#enc-whitelist-file:            # File containing a list of Pokemon IDs to encounter for IV/CPs. Requires L30 or higher accounts in --high-lvl-accounts.
+#encounter-whitelist:           # List of Pokemon to encounter for IV/CP scanning. Syntax [id,id,id,id]. Requires L30 or higher accounts in --high-lvl-accounts.
+#encounter-whitelist-file:      # File containing a list of Pokemon IDs to encounter for IV/CPs. Requires L30 or higher accounts in --high-lvl-accounts.
 #hlvl-kph:                      # Set a maximum speed in km/hour for high level account scanning. (default=25)
 
 

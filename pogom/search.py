@@ -26,7 +26,6 @@ import random
 import time
 import copy
 import requests
-import schedulers
 import terminalsize
 
 from datetime import datetime
@@ -45,10 +44,11 @@ from .models import (parse_map, GymDetails, parse_gyms, MainWorker,
                      WorkerStatus, HashKeys)
 from .utils import now, clear_dict_response
 from .transform import get_new_coords, jitter_location
-from .account import (setup_api, check_login, get_tutorial_state,
-                      complete_tutorial, AccountSet)
+from .account import (setup_api, check_login, get_player_state,
+                      complete_tutorial, parse_account_stats, AccountSet)
 from .captcha import captcha_overseer_thread, handle_captcha
 from .proxy import get_new_proxy
+from .schedulers import KeyScheduler, SchedulerFactory
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +91,9 @@ def switch_status_printer(display_type, current_page, mainlog,
         elif command.lower() == 'h':
             mainlog.handlers[0].setLevel(logging.CRITICAL)
             display_type[0] = 'hashstatus'
+        elif command.lower() == 'a':
+            mainlog.handlers[0].setLevel(logging.CRITICAL)
+            display_type[0] = 'accountstats'
 
 
 # Thread to print out the status of each worker.
@@ -262,6 +265,92 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                         key_instance['remaining'],
                         key_instance['maximum'],
                         key_instance['peak']))
+        elif display_type[0] == 'accountstats':
+            status_text.append(
+                '----------------------------------------------------------')
+            status_text.append('Account statistics:')
+            status_text.append(
+                '----------------------------------------------------------')
+
+            # Collect all account data.
+            accounts = []
+            for item in threadStatus:
+                if threadStatus[item]['type'] == 'Worker':
+                    worker = threadStatus[item]
+                    account = worker.get('account', {})
+                    accounts.append(('Active', account))
+            for account in list(account_queue.queue):
+                accounts.append(('Free', account))
+            for captcha_tuple in list(account_captchas):
+                account = captcha_tuple[1]
+                accounts.append(('Captcha', account))
+            for acc_fail in account_failures:
+                account = acc_fail['account']
+                accounts.append(('Failed', account))
+
+            # Determine maximum username length.
+            userlen = 8
+            for account_status, acc in accounts:
+                userlen = max(userlen, len(acc.get('username', '')) + 4)
+
+            # Print table header.
+            status = '{:7} | {:' + str(userlen) + '} | {:3} | {:>7} | {:>5} ' \
+                '| {:10} | {:>9} | {:>7} | {:8} | {:7} | {:9} | {:>6} | {:7}'
+            status_text.append(
+                status.format(
+                    'Status', 'Username', 'LVL', 'XP', 'XP/h', 'Encounters',
+                    'Walked', 'Throws', 'Throws/h', 'Catches', 'Catches/h',
+                    'Spins', 'Spins/h'))
+            # Get the terminal size.
+            width, height = terminalsize.get_terminal_size()
+            # Queue and overseer take 2 lines.  Switch message takes up 2
+            # lines.  Remove an extra 2 for things like screen status lines.
+            usable_height = height - 6
+            # Prevent people running terminals only 6 lines high from getting a
+            # divide by zero.
+            if usable_height < 1:
+                usable_height = 1
+
+            total_pages = math.ceil(len(accounts) / float(usable_height))
+
+            # Prevent moving outside the valid range of pages.
+            if current_page[0] > total_pages:
+                current_page[0] = total_pages
+            if current_page[0] < 1:
+                current_page[0] = 1
+
+            # Calculate which lines to print (1-based).
+            start_line = usable_height * (current_page[0] - 1) + 1
+            end_line = start_line + usable_height - 1
+
+            # Print account statistics.
+            current_line = 0
+            for account_status, account in accounts:
+                # Skip over items that don't belong on this page.
+                current_line += 1
+                if current_line < start_line:
+                    continue
+                if current_line > end_line:
+                    break
+
+                username = account['username']
+                if account['warning']:
+                    username += ' (!)'
+
+                status_text.append(status.format(
+                    account_status,
+                    username,
+                    account['level'],
+                    account['experience'],
+                    account['hour_experience'],
+                    account['encounters'],
+                    '{:.1f} km'.format(account['walked']),
+                    account['throws'],
+                    account['hour_throws'],
+                    account['captures'],
+                    account['hour_captures'],
+                    account['spins'],
+                    account['hour_spins']))
 
         # Print the status_text for the current screen.
         status_text.append((
@@ -360,6 +449,31 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     to prevent accounts from being cycled through too quickly.
     '''
     for i, account in enumerate(args.accounts):
+        account['warning'] = None
+        account['banned'] = False
+        account['tutorials'] = []
+        account['max_items'] = 350
+        account['max_pokemons'] = 250
+        account['level'] = 1
+        account['items'] = {}
+        account['item_count'] = 0
+        account['pokemons'] = {}
+        # account['nickname'] = ''
+        account['level'] = 0
+        account['experience'] = 0
+        account['encounters'] = 0
+        account['throws'] = 0
+        account['captures'] = 0
+        account['spins'] = 0
+        account['walked'] = 0.0
+        # account['last_active'] = datetime.utcnow()
+        # account['last_location'] = None
+        account['last_cleanup'] = time.time()
+        account['used_pokestops'] = {}
+        account['hour_experience'] = 0
+        account['hour_throws'] = 0
+        account['hour_captures'] = 0
+        account['hour_spins'] = 0
         account_queue.put(account)
 
     '''
@@ -395,8 +509,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     # Create the key scheduler.
     if args.hash_key:
         log.info('Enabling hashing key scheduler...')
-        key_scheduler = schedulers.KeyScheduler(args.hash_key,
-                                                db_updates_queue)
+        key_scheduler = KeyScheduler(args.hash_key, db_updates_queue)
 
     if(args.print_status):
         log.info('Starting status printer thread...')
@@ -443,7 +556,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
             search_items_queue = Queue()
             # Create the appropriate type of scheduler to handle the search
             # queue.
-            scheduler = schedulers.SchedulerFactory.get_scheduler(
+            scheduler = SchedulerFactory.get_scheduler(
                 args.scheduler, [search_items_queue], threadStatus, args)
 
             scheduler_array.append(scheduler)
@@ -457,6 +570,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         threadStatus[workerId] = {
             'type': 'Worker',
             'message': 'Creating thread...',
+            'account': None,
             'success': 0,
             'fail': 0,
             'noitems': 0,
@@ -753,19 +867,18 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
 
             status['starttime'] = now()
 
-            # Track per loop.
-            first_login = True
-
-            # Make sure the scheduler is done for valid locations.
+            # Make sure the scheduler is done for valid locations
             while not scheduler.ready:
                 time.sleep(1)
 
-            status['message'] = ('Waiting to get new account from the'
-                                 + ' queue...')
+            status['message'] = ('Waiting to get new account from the ' +
+                                 'queue...')
             log.info(status['message'])
 
             # Get an account.
             account = account_queue.get()
+            # Track per loop.
+            account['first_login'] = True
             status.update(WorkerStatus.get_worker(
                 account['username'], scheduler.scan_location))
             status['message'] = 'Switching to account {}.'.format(
@@ -773,8 +886,9 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
             log.info(status['message'])
 
             # New lease of life right here.
-            status['fail'] = 0
+            status['account'] = account
             status['success'] = 0
+            status['fail'] = 0
             status['noitems'] = 0
             status['skip'] = 0
             status['captcha'] = 0
@@ -789,6 +903,7 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
             # for stat purposes.
             consecutive_noitems = 0
 
+            # Create the API instance this will use.
             api = setup_api(args, status)
 
             # The forever loop for the searches.
@@ -920,21 +1035,31 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
 
                 # Only run this when it's the account's first login, after
                 # check_login().
-                if first_login:
-                    first_login = False
+                if account['first_login']:
+                    if get_player_state(api, account):
+                        if account['warning']:
+                            log.warning('Account %s has received a warning.',
+                                        account['username'])
+                        if account['banned']:
+                            status['message'] = (
+                                'Account %s is marked as banned!').format(
+                                    account['username'])
+                            log.warning(status['message'])
+                            account_failures.append({'account': account,
+                                                     'last_fail_time': now(),
+                                                     'reason': 'banned'})
+                            break
 
-                    # Check tutorial completion.
-                    if args.complete_tutorial:
-                        tutorial_state = get_tutorial_state(api, account)
-
-                        if not all(x in tutorial_state
-                                   for x in (0, 1, 3, 4, 7)):
-                            log.info('Completing tutorial steps for %s.',
-                                     account['username'])
-                            complete_tutorial(api, account, tutorial_state)
-                        else:
-                            log.info('Account %s already completed tutorial.',
-                                     account['username'])
+                        # Check tutorial completion.
+                        if args.complete_tutorial:
+                            if not all(x in account['tutorials']
+                                       for x in (0, 1, 3, 4, 7)):
+                                log.info('Completing tutorial steps for %s.',
+                                         account['username'])
+                                complete_tutorial(api, account)
+                            else:
+                                log.info('Account %s has already completed ' +
+                                         'the tutorial.', account['username'])
 
                 # Putting this message after the check_login so the messages
                 # aren't out of order.
@@ -952,6 +1077,10 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                 status['longitude'] = step_location[1]
                 dbq.put((WorkerStatus, {0: WorkerStatus.db_format(status)}))
 
+                # Account information - used in captchas and account functions.
+                account['last_active'] = datetime.utcnow()
+                account['last_location'] = step_location
+
                 # Nothing back. Mark it up, sleep, carry on.
                 if not response_dict:
                     status['fail'] += 1
@@ -967,7 +1096,7 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                     captcha = handle_captcha(args, status, api, account,
                                              account_failures,
                                              account_captchas, whq,
-                                             response_dict, step_location)
+                                             response_dict)
                     if captcha is not None and captcha:
                         # Make another request for the same location
                         # since the previous one was captcha'd.
@@ -979,9 +1108,13 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                         time.sleep(3)
                         break
 
-                    parsed = parse_map(args, response_dict, step_location,
-                                       dbq, whq, key_scheduler, api, status,
-                                       scan_date, account, account_sets)
+                    # Parse player data from response into the account.
+                    parse_account_stats(args, api, response_dict, account)
+
+                    parsed = parse_map(args, response_dict, step_location, dbq,
+                                       whq, api, status, scan_date, account,
+                                       account_sets, key_scheduler)
+
                     del response_dict
                     scheduler.task_done(status, parsed)
                     if parsed['count'] > 0:
@@ -1011,6 +1144,9 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                         status['message'], repr(e)))
                     if response_dict is not None:
                         del response_dict
+
+                if account['first_login']:
+                    account['first_login'] = False
 
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:

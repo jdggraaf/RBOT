@@ -186,9 +186,9 @@ def __get_key_fields(whtype):
         'pokestop': ['enabled', 'latitude',
                      'longitude', 'lure_expiration', 'active_fort_modifier'],
         'pokemon': ['spawnpoint_id', 'pokemon_id', 'latitude', 'longitude',
-                    'disappear_time', 'move_1', 'move_2',
+                    'disappear_time', 'move_1', 'move_2', 'cp',
                     'individual_stamina', 'individual_defense',
-                    'individual_attack', 'form', 'cp'],
+                    'individual_attack', 'form'],
         'gym': ['team_id', 'guard_pokemon_id',
                 'gym_points', 'enabled', 'latitude', 'longitude'],
         'gym_details': ['latitude', 'longitude', 'team', 'pokemon']

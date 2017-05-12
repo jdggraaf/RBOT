@@ -78,10 +78,8 @@ def get_args():
                         help=('Load accounts from CSV file containing ' +
                               '"auth_service,username,passwd" lines.'))
     parser.add_argument('-hlvl', '--high-lvl-accounts',
-                        help=('Load high level accounts from CSV file '
-                              + ' containing '
-                              + '"auth_service,username,passwd"'
-                              + ' lines.'))
+                        help=('Load high level accounts from CSV file. '
+                              + 'Format: "auth_service,username,passwd"'))
     parser.add_argument('-bh', '--beehive',
                         help=('Use beehive configuration for multiple ' +
                               'accounts, one account per hex.  Make sure ' +
@@ -147,20 +145,47 @@ def get_args():
                         'captcha solving. On timeout, if enabled, 2Captcha ' +
                         'will be used to solve captcha. Default is 0.',
                         type=int, default=0)
+    parser.add_argument('-prt', '--pokestop-refresh-time',
+                        help='Time until Pokestops can be used again.',
+                        type=int, default=300)
+    parser.add_argument('-aml', '--account-max-level',
+                        help='Spin Pokestops until this level is reached.',
+                        type=int, default=4)
+    catch_list = parser.add_mutually_exclusive_group()
+    catch_list.add_argument('-pcl', '--pokemon-catch-list', action='append',
+                            help='Allow Pokemons on this list to be captured.',
+                            default=[16, 19, 41, 129, 163, 161, 193])
+    catch_list.add_argument('-pclf', '--pokemon-catch-list-file',
+                            default='', help='File containing a list of ' +
+                                             'Pokemon allowed to be captured.')
+    parser.add_argument('-amt', '--account-max-throws',
+                        help='Maximum number of Pokeball throws per hour.',
+                        type=int, default=110)
+    parser.add_argument('-amc', '--account-max-captures',
+                        help='Maximum number of Pokemon caught per hour.',
+                        type=int, default=60)
+    parser.add_argument('-ams', '--account-max-spins',
+                        help='Maximum number of Pokestop spins per hour.',
+                        type=int, default=80)
     parser.add_argument('-ed', '--encounter-delay',
                         help=('Time delay between encounter pokemon ' +
                               'in scan threads.'),
                         type=float, default=1)
-    parser.add_argument('-encwf', '--enc-whitelist-file',
-                        default='', help='File containing a list of '
-                        'Pokemon IDs to encounter for'
-                        ' IV/CP scanning.')
     parser.add_argument('-nostore', '--no-api-store',
                         help=("Don't store the API objects used by the high"
                               + ' level accounts in memory. This will increase'
                               + ' the number of logins per account, but '
                               + ' decreases memory usage.'),
                         action='store_true', default=False)
+    encounter_list = parser.add_mutually_exclusive_group()
+    encounter_list.add_argument('-ewht', '--encounter-whitelist',
+                                action='append', default=[],
+                                help=('List of Pokemon to encounter for ' +
+                                      'IV/CP scanning.'))
+    encounter_list.add_argument('-ewhtf', '--encounter-whitelist-file',
+                                default='', help=('File containing a list of '
+                                                  + 'Pokemon to encounter for '
+                                                  + 'IV/CP scanning.'))
     webhook_list = parser.add_mutually_exclusive_group()
     webhook_list.add_argument('-wwht', '--webhook-whitelist',
                               action='append', default=[],
@@ -632,6 +657,24 @@ def get_args():
                                   'password': args.password[i],
                                   'auth_service': args.auth_service[i]})
 
+        # Make max workers equal number of accounts if unspecified, and disable
+        # account switching.
+        if args.workers is None:
+            args.workers = len(args.accounts)
+            args.account_search_interval = None
+
+        # Disable search interval if 0 specified.
+        if args.account_search_interval == 0:
+            args.account_search_interval = None
+
+        # Make sure we don't have an empty account list after adding command
+        # line and CSV accounts.
+        if len(args.accounts) == 0:
+            print(sys.argv[0] +
+                  ": Error: no accounts specified. Use -a, -u, and -p or " +
+                  "--accountcsv to add accounts.")
+            sys.exit(1)
+
         # Prepare the L30 accounts for the account sets.
         args.accounts_L30 = []
 
@@ -665,31 +708,21 @@ def get_args():
 
                     args.accounts_L30.append(hlvl_account)
 
-        # Prepare the IV/CP scanning filters.
-        args.enc_whitelist = []
+        if args.encounter_whitelist_file:
+            with open(args.encounter_whitelist_file) as f:
+                args.encounter_whitelist = [get_pokemon_id(name) for name in
+                                            f.read().splitlines()]
+        else:
+            args.encounter_whitelist = [int(i) for i in
+                                        args.encounter_whitelist]
 
-        # IV/CP scanning.
-        if args.enc_whitelist_file:
-            with open(args.enc_whitelist_file) as f:
-                args.enc_whitelist = frozenset([int(l.strip()) for l in f])
-
-        # Make max workers equal number of accounts if unspecified, and disable
-        # account switching.
-        if args.workers is None:
-            args.workers = len(args.accounts)
-            args.account_search_interval = None
-
-        # Disable search interval if 0 specified.
-        if args.account_search_interval == 0:
-            args.account_search_interval = None
-
-        # Make sure we don't have an empty account list after adding command
-        # line and CSV accounts.
-        if len(args.accounts) == 0:
-            print(sys.argv[0] +
-                  ": Error: no accounts specified. Use -a, -u, and -p or " +
-                  "--accountcsv to add accounts.")
-            sys.exit(1)
+        if args.pokemon_catch_list_file:
+            with open(args.pokemon_catch_list_file) as f:
+                args.pokemon_catch_list = [get_pokemon_id(name) for name in
+                                           f.read().splitlines()]
+        else:
+            args.pokemon_catch_list = [int(i) for i in
+                                       args.pokemon_catch_list]
 
         if args.webhook_whitelist_file:
             with open(args.webhook_whitelist_file) as f:
