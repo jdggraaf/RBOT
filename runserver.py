@@ -328,12 +328,28 @@ def main():
     app.set_heartbeat_control(heartbeat)
     app.set_location_queue(new_location_queue)
 
+    if args.encounter_whitelist_file:
+        with open(args.encounter_whitelist_file) as f:
+            args.encounter_whitelist = [get_pokemon_id(name) for name in
+                                        f.read().splitlines()]
+    else:
+        args.encounter_whitelist = [int(i) for i in
+                                    args.encounter_whitelist]
+
+    if args.pokemon_catch_list_file:
+        with open(args.pokemon_catch_list_file) as f:
+            args.pokemon_catch_list = [get_pokemon_id(name) for name in
+                                       f.read().splitlines()]
+        for p_id in args.pokemon_catch_list:
+            log.debug('Pokemon on catch list: %d', p_id)
+    else:
+        args.pokemon_catch_list = [int(i) for i in
+                                   args.pokemon_catch_list]
+
     if args.webhook_whitelist_file:
         with open(args.webhook_whitelist_file) as f:
             args.webhook_whitelist = [get_pokemon_id(name) for name in
                                       f.read().splitlines()]
-        for ww_id in args.webhook_whitelist:
-            log.debug('Webhook whitelist: %d', ww_id)
     elif args.webhook_blacklist_file:
         with open(args.webhook_blacklist_file) as f:
             args.webhook_blacklist = [get_pokemon_id(name) for name in

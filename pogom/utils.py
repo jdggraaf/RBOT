@@ -708,22 +708,6 @@ def get_args():
 
                     args.accounts_L30.append(hlvl_account)
 
-        if args.encounter_whitelist_file:
-            with open(args.encounter_whitelist_file) as f:
-                args.encounter_whitelist = [get_pokemon_id(name) for name in
-                                            f.read().splitlines()]
-        else:
-            args.encounter_whitelist = [int(i) for i in
-                                        args.encounter_whitelist]
-
-        if args.pokemon_catch_list_file:
-            with open(args.pokemon_catch_list_file) as f:
-                args.pokemon_catch_list = [get_pokemon_id(name) for name in
-                                           f.read().splitlines()]
-        else:
-            args.pokemon_catch_list = [int(i) for i in
-                                       args.pokemon_catch_list]
-
         # Decide which scanning mode to use.
         if args.spawnpoint_scanning:
             args.scheduler = 'SpawnScan'
