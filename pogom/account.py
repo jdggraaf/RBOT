@@ -283,20 +283,39 @@ def complete_tutorial(api, account):
     return True
 
 
-# TODO: change to average stats, based on start time.
+def reset_account(account):
+    account['first_login'] = True
+    account['start_time'] = time.time()
+    account['last_active'] = None
+    account['last_location'] = None
+    account['used_pokestops'] = {}
+    account['session_experience'] = 0
+    account['session_throws'] = 0
+    account['session_catches'] = 0
+    account['session_spins'] = 0
+    account['hour_experience'] = 0
+    account['hour_throws'] = 0
+    account['hour_catches'] = 0
+    account['hour_spins'] = 0
+
+
 def cleanup_account_stats(account, pokestop_timeout):
-    # Do hourly account statistics cleanup.
-    last_cleanup = account['last_cleanup']
-    if (last_cleanup + 3600) < time.time():
-        log.info('Account %s hourly stats: %d throws - %d captures - %d spins',
-                 account['username'], account['hour_throws'],
-                 account['hour_captures'], account['hour_spins'])
-        # These counters are used to limit levelling actions per hour.
-        account['hour_experience'] = 0
-        account['hour_throws'] = 0
-        account['hour_captures'] = 0
-        account['hour_spins'] = 0
-        account['last_cleanup'] = time.time()
+    elapsed_time = time.time() - account['start_time']
+
+    # Just to prevent division by 0 errors, when needed
+    # set elapsed to 1 millisecond
+    if elapsed_time == 0:
+        elapsed_time = 1
+
+    xp_h = account['session_experience'] * 3600.0 / elapsed_time
+    throws_h = account['session_throws'] * 3600.0 / elapsed_time
+    catches_h = account['session_catches'] * 3600.0 / elapsed_time
+    spins_h = account['session_spins'] * 3600.0 / elapsed_time
+
+    account['hour_experience'] = xp_h
+    account['hour_throws'] = throws_h
+    account['hour_catches'] = catches_h
+    account['hour_spins'] = spins_h
 
     # Refresh visited pokestops that were on timeout.
     used_pokestops = dict(account['used_pokestops'])
@@ -384,7 +403,7 @@ def parse_account_stats(args, api, response_dict, account):
         account['experience'] = player_stats.get('experience', 0L)
         account['encounters'] = player_stats.get('pokemons_encountered', 0)
         account['throws'] = player_stats.get('pokeballs_thrown', 0)
-        account['captures'] = player_stats.get('pokemons_captured', 0)
+        account['catches'] = player_stats.get('pokemons_captured', 0)
         account['spins'] = player_stats.get('poke_stop_visits', 0)
         account['walked'] = player_stats.get('km_walked', 0.0)
 
@@ -492,8 +511,8 @@ def handle_pokestop(status, api, account, pokestop):
                         account['username'], xp_awarded)
                 log.info(status['message'])
 
-                account['hour_spins'] += 1
-                account['hour_experience'] += xp_awarded
+                account['session_spins'] += 1
+                account['session_experience'] += xp_awarded
 
             elif spin_result == 2:
                 log.warning('Pokestop out of range.')
@@ -632,7 +651,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
         time.sleep(random.uniform(3, 5))
         res = request_catch_pokemon(api, encounter_id, spawnpoint_id, throw,
                                     ball['id'])
-        account['hour_throws'] += 1
+        account['session_throws'] += 1
 
         catch_pokemon = res['responses'].get('CATCH_POKEMON', {})
         if catch_pokemon:
@@ -653,8 +672,8 @@ def catch_pokemon(status, api, account, pokemon, iv):
                         pokemon_id, catch_id, ball['name'], xp_awarded)
                 log.info(status['message'])
 
-                account['hour_captures'] += 1
-                account['hour_experience'] += xp_awarded
+                account['session_catches'] += 1
+                account['session_experience'] += xp_awarded
 
                 # Check if caught Pokemon is a Ditto.
                 # Parse Pokemons in response and update account inventory.

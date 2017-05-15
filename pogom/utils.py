@@ -161,7 +161,7 @@ def get_args():
     parser.add_argument('-amt', '--account-max-throws',
                         help='Maximum number of Pokeball throws per hour.',
                         type=int, default=110)
-    parser.add_argument('-amc', '--account-max-captures',
+    parser.add_argument('-amc', '--account-max-catches',
                         help='Maximum number of Pokemon caught per hour.',
                         type=int, default=60)
     parser.add_argument('-ams', '--account-max-spins',

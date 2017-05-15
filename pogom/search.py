@@ -45,7 +45,7 @@ from .models import (parse_map, GymDetails, parse_gyms, MainWorker,
                      WorkerStatus, HashKeys)
 from .utils import now, clear_dict_response
 from .transform import get_new_coords, jitter_location
-from .account import (setup_api, check_login, get_player_state,
+from .account import (setup_api, check_login, get_player_state, reset_account,
                       complete_tutorial, parse_account_stats, AccountSet)
 from .captcha import captcha_overseer_thread, handle_captcha
 from .proxy import get_new_proxy
@@ -348,8 +348,8 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                     '{:.1f} km'.format(account['walked']),
                     account['throws'],
                     account['hour_throws'],
-                    account['captures'],
-                    account['hour_captures'],
+                    account['catches'],
+                    account['hour_catches'],
                     account['spins'],
                     account['hour_spins']))
 
@@ -459,7 +459,6 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         account['items'] = {}
         account['item_count'] = 0
         account['pokemons'] = {}
-        # account['nickname'] = ''
         account['level'] = 0
         account['experience'] = 0
         account['encounters'] = 0
@@ -467,14 +466,22 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         account['captures'] = 0
         account['spins'] = 0
         account['walked'] = 0.0
-        # account['last_active'] = datetime.utcnow()
-        # account['last_location'] = None
-        account['last_cleanup'] = time.time()
+        '''
+        Handled by reset_account() when new account is fetched:
+        account['first_login'] = True
+        account['start_time'] = now()
+        account['last_active'] = None
+        account['last_location'] = None
         account['used_pokestops'] = {}
+        account['session_experience'] = 0
+        account['session_throws'] = 0
+        account['session_captures'] = 0
+        account['session_spins'] = 0
         account['hour_experience'] = 0
         account['hour_throws'] = 0
-        account['hour_captures'] = 0
+        account['hour_catches'] = 0
         account['hour_spins'] = 0
+        '''
         account_queue.put(account)
 
     '''
@@ -878,8 +885,8 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
 
             # Get an account.
             account = account_queue.get()
-            # Track per loop.
-            account['first_login'] = True
+            # Reset account statistics tracked per loop.
+            reset_account(account)
             status.update(WorkerStatus.get_worker(
                 account['username'], scheduler.scan_location))
             status['message'] = 'Switching to account {}.'.format(

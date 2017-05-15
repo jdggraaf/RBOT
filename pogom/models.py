@@ -2137,9 +2137,9 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 if account['level'] < args.account_max_level:
                     pokemon_id = p['pokemon_data']['pokemon_id']
                     throws = account['hour_throws']
-                    captures = account['hour_captures']
+                    catches = account['hour_catches']
                     if (throws < args.account_max_throws and
-                            captures <= args.account_max_captures and
+                            catches <= args.account_max_catches and
                             pokemon_id in args.pokemon_catch_list):
                         iv = int((iv_attack + iv_defense + iv_stamina) *
                                  100 / 45.0)
