@@ -1043,7 +1043,7 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                                         account['username'])
                         if account['banned']:
                             status['message'] = (
-                                'Account %s is marked as banned!').format(
+                                'Account {} is marked as banned!').format(
                                     account['username'])
                             log.warning(status['message'])
                             account_failures.append({'account': account,
