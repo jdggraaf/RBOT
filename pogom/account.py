@@ -795,7 +795,7 @@ def encounter_pokemon_request(api, encounter_id, spawnpoint_id, scan_location):
         req.download_settings()
         req.get_buddy_walked()
         encounter_result = req.call()
-
+        # NOTE: response dictionary should be "cleared" outside this method.
         return encounter_result
     except Exception as e:
         log.error('Exception while encountering Pokémon: %s.', repr(e))
@@ -809,8 +809,12 @@ def request_recycle_item(api, item_id, amount):
     try:
         req = api.create_request()
         res = req.recycle_inventory_item(item_id=item_id, count=amount)
-        res = req.check_challenge()   # real app behavior
-        res = req.get_inventory()   # real app behavior
+        req.check_challenge()
+        req.get_hatched_eggs()
+        req.get_inventory()
+        req.check_awarded_badges()
+        req.download_settings()
+        req.get_buddy_walked()
         res = req.call()
 
         recycle_item = res['responses']['RECYCLE_INVENTORY_ITEM']
@@ -830,6 +834,11 @@ def request_level_up_rewards(api, account):
         req = api.create_request()
         res = req.level_up_rewards(level=account['level'])
         req.check_challenge()
+        req.get_hatched_eggs()
+        req.get_inventory()
+        req.check_awarded_badges()
+        req.download_settings()
+        req.get_buddy_walked()
         res = req.call()
 
         rewards = res['responses']['LEVEL_UP_REWARDS'].get('result', 0)
@@ -881,11 +890,11 @@ def request_use_item_encounter(api, encounter_id, spawnpoint_id, berry_id=701):
             encounter_id=encounter_id,
             spawn_point_guid=spawnpoint_id)
         req.check_challenge()
-        # req.get_hatched_eggs()
+        req.get_hatched_eggs()
         req.get_inventory()
-        # req.check_awarded_badges()
-        # req.download_settings()
-        # req.get_buddy_walked()
+        req.check_awarded_badges()
+        req.download_settings()
+        req.get_buddy_walked()
         res = req.call()
 
         result = res['responses']['USE_ITEM_ENCOUNTER'].get('active_item', 0)
