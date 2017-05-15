@@ -312,12 +312,6 @@ def cleanup_account_stats(account, pokestop_timeout):
 # Send LevelUpRewards request to check for and accept level up rewards.
 def parse_account_stats(args, api, response_dict, account):
     if account['first_login']:
-        # Check if account is banned.
-        status_code = response_dict.get('status_code', -1)
-        if status_code == 3:
-            account['banned'] = True
-            log.warning('Account %s is probably banned.', account['username'])
-
         # Check if there are level up rewards to claim.
         time.sleep(random.uniform(2.0, 3.0))
         if request_level_up_rewards(api, account):
@@ -326,6 +320,12 @@ def parse_account_stats(args, api, response_dict, account):
         else:
             log.info('Account %s failed to collect level up rewards.',
                      account['username'])
+
+    # Check if account is banned.
+    status_code = response_dict.get('status_code', -1)
+    if status_code == 3:
+        account['banned'] = True
+        log.warning('Account %s is probably banned.', account['username'])
 
     cleanup_account_stats(account, args.pokestop_refresh_time)
 

@@ -1041,17 +1041,9 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                         if account['warning']:
                             log.warning('Account %s has received a warning.',
                                         account['username'])
-                        if account['banned']:
-                            status['message'] = (
-                                'Account {} is marked as banned!').format(
-                                    account['username'])
-                            log.warning(status['message'])
-                            account_failures.append({'account': account,
-                                                     'last_fail_time': now(),
-                                                     'reason': 'banned'})
-                            break
 
                         # Check tutorial completion.
+                        # TODO: remove args.complete_tutorial
                         if args.complete_tutorial:
                             if not all(x in account['tutorials']
                                        for x in (0, 1, 3, 4, 7)):
@@ -1062,6 +1054,16 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                                 log.info('Account %s has already completed ' +
                                          'the tutorial.', account['username'])
 
+                # Check if account is marked as banned.
+                if account['banned']:
+                    status['message'] = (
+                        'Account {} is marked as banned!').format(
+                            account['username'])
+                    log.warning(status['message'])
+                    account_failures.append({'account': account,
+                                             'last_fail_time': now(),
+                                             'reason': 'banned'})
+                    break
                 # Putting this message after the check_login so the messages
                 # aren't out of order.
                 status['message'] = messages['search']
