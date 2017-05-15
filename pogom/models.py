@@ -1805,7 +1805,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
         if config['parse_pokestops'] or config['parse_gyms']:
             forts += cell.get('forts', [])
 
-        # Update count regardless of Pokémon parsing or not, we need the count.
+        # Update count regardless of Pokemon parsing or not, we need the count.
         # Length is O(1).
         wild_pokemon_count += len(cell.get('wild_pokemons', []))
         forts_count += len(cell.get('forts', []))
@@ -1930,6 +1930,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
             # Scan for IVs/CP and moves.
             pokemon_id = p['pokemon_data']['pokemon_id']
             encounter_result = None
+            encounter_account = False
             if args.encounter and (pokemon_id in args.encounter_whitelist):
                 time.sleep(args.encounter_delay)
 
@@ -1943,9 +1944,10 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     scan_location = step_location
                     hlvl_account = account
                     hlvl_api = api
+                    encounter_account = True
                 else:
                     scan_location = [p['latitude'], p['longitude']]
-                    # Get account to use for IV or CP scanning.
+                    # Get account to use for IV and CP scanning.
                     hlvl_account = account_sets.next('30', scan_location)
 
                 # If we don't have an API object yet, it means we didn't re-use
@@ -1955,7 +1957,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 # If we didn't get an account, we can't encounter.
                 if hlvl_account:
                     # Logging.
-                    log.debug('Encountering Pokémon ID %s with account %s'
+                    log.debug('Encountering Pokemon ID %s with account %s'
                               + ' at %s, %s.',
                               pokemon_id,
                               hlvl_account['username'],
@@ -1994,7 +1996,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     check_login(args, hlvl_account, hlvl_api, scan_location,
                                 status['proxy_url'])
 
-                    # Encounter Pokémon.
+                    # Encounter Pokemon.
                     encounter_result = encounter_pokemon_request(
                         hlvl_api,
                         p['encounter_id'],
@@ -2051,11 +2053,11 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                               + ' consider adding more. Skipping encounter.')
 
             # Required for pokemon catching
-            if not encounter_result and (args.encounter and
-               (pokemon_id in args.pokemon_catch_list)) and (
-               account['level'] < args.account_max_level):
+            catch_enabled = account['level'] < args.account_max_level
+            if args.encounter and not encounter_account and catch_enabled and (
+               pokemon_id in args.pokemon_catch_list):
                 time.sleep(args.encounter_delay)
-                # Encounter Pokémon.
+                # Encounter Pokemon.
                 encounter_result = encounter_pokemon_request(
                     api,
                     p['encounter_id'],
@@ -2101,7 +2103,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 cp = pokemon_info.get('cp', None)
 
                 # Logging: let the user know we succeeded.
-                log.debug('Encounter with account level %d for Pokémon ID %s'
+                log.debug('Encounter with account level %d for Pokemon ID %s'
                           + ' at %s, %s successful: '
                           + ' %s/%s/%s, %s CP.',
                           encounter_level,
@@ -2134,7 +2136,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         'pokemon_display'].get('form', None)
 
                 # Try to catch wild Pokemon.
-                if account['level'] < args.account_max_level:
+                if catch_enabled:
                     pokemon_id = p['pokemon_data']['pokemon_id']
                     throws = account['hour_throws']
                     catches = account['hour_catches']

@@ -340,8 +340,6 @@ def main():
         with open(args.pokemon_catch_list_file) as f:
             args.pokemon_catch_list = frozenset(
                 [get_pokemon_id(name) for name in f.read().splitlines()])
-        for p_id in args.pokemon_catch_list:
-            log.debug('Pokemon on catch list: %d', p_id)
     else:
         args.pokemon_catch_list = frozenset(
             [int(i) for i in args.pokemon_catch_list])
