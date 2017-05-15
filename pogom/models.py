@@ -2052,7 +2052,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
             # Required for pokemon catching
             if not encounter_result and (args.encounter and
-               (pokemon_id in args.pokemon_catch_list)):
+               (pokemon_id in args.pokemon_catch_list)) and (
+               account['level'] < args.account_max_level):
                 time.sleep(args.encounter_delay)
                 # Encounter Pokémon.
                 encounter_result = encounter_pokemon_request(
