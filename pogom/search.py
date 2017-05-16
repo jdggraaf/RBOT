@@ -295,8 +295,8 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                 userlen = max(userlen, len(acc.get('username', '')) + 4)
 
             # Print table header.
-            status = '{:7} | {:' + str(userlen) + '} | {:3} | {:>7} | {:>5} ' \
-                '| {:10} | {:>9} | {:>7} | {:8} | {:7} | {:9} | {:>6} | {:7}'
+            status = '{:7} | {:' + str(userlen) + '} | {:3} | {:>7} | {:>6} ' \
+                '| {:10} | {:>9} | {:>7} | {:>8} | {:7} | {:>9} | {:6} | {:>7}'
             status_text.append(
                 status.format(
                     'Status', 'Username', 'LVL', 'XP', 'XP/h', 'Encounters',
@@ -343,7 +343,7 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                     username,
                     account['level'],
                     account['experience'],
-                    '{:.1f} k'.format(account['hour_experience'] / 1000),
+                    '{:.1f}k'.format(account['hour_experience'] / 1000),
                     account['encounters'],
                     '{:.1f} km'.format(account['walked']),
                     account['throws'],

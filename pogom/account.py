@@ -632,9 +632,14 @@ def catch_pokemon(status, api, account, pokemon, iv):
             log.info(status['message'])
 
             time.sleep(random.uniform(2, 4))
-            res = request_use_item_encounter(api, encounter_id, spawnpoint_id,
-                                             berry['id'])
-            if not res:
+            if request_use_item_encounter(api, encounter_id, spawnpoint_id,
+                                          berry['id']):
+                account['items'][berry['id']] -= 1
+                status['message'] = (
+                    'Used a {} in encounter #{} - attempt {}.').format(
+                        berry['name'], encounter_id, attempts)
+                log.debug(status['message'])
+            else:
                 status['message'] = (
                     'Unable to use {} in encounter #{} - attempt {}.').format(
                         berry['name'], encounter_id, attempts)
@@ -730,19 +735,27 @@ def release_pokemon(status, api, account, catch_id):
     log.debug('Account %s inventory has %d / %d Pokemons.',
               account['username'], total_pokemons, max_pokemons)
 
+    time.sleep(random.uniform(4, 6))
+
     release_ids = []
-    if total_pokemons < max_pokemons * 0.9:
+    if total_pokemons > max_pokemons * 0.9:
         release_count = int(total_pokemons * 0.03)  # should be around 9
         release_ids = random.sample(account['pokemons'].keys(), release_count)
-
-    time.sleep(random.uniform(4, 6))
-    if request_release_pokemon(api, catch_id, release_ids):
         release_ids.append(catch_id)
+        release = request_release_pokemon(api, 0, release_ids)
+    else:
+        release_ids.append(catch_id)
+        release = request_release_pokemon(api, catch_id)
+
+    if release:
         status['message'] = 'Released Pokemon: {}'.format(release_ids)
         log.info(status['message'])
+
+        for p_id in release_ids:
+            account['pokemons'].pop(p_id, None)
         return True
     else:
-        status['message'] = 'Unable to release Pokemon: {}'.format(release_ids)
+        status['message'] = 'Failed to release Pokemon: {}'.format(release_ids)
         log.warning(status['message'])
         return False
 
