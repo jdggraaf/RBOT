@@ -343,15 +343,15 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                     username,
                     account['level'],
                     account['experience'],
-                    account['hour_experience'],
+                    '{:.1f} k'.format(account['hour_experience'] / 1000),
                     account['encounters'],
                     '{:.1f} km'.format(account['walked']),
                     account['throws'],
-                    account['hour_throws'],
+                    '{:.1f}'.format(account['hour_throws']),
                     account['catches'],
-                    account['hour_catches'],
+                    '{:.1f}'.format(account['hour_catches']),
                     account['spins'],
-                    account['hour_spins']))
+                    '{:.1f}'.format(account['hour_spins'])))
 
         # Print the status_text for the current screen.
         status_text.append((
@@ -463,9 +463,10 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         account['experience'] = 0
         account['encounters'] = 0
         account['throws'] = 0
-        account['captures'] = 0
+        account['catches'] = 0
         account['spins'] = 0
         account['walked'] = 0.0
+        reset_account(account)
         '''
         Handled by reset_account() when new account is fetched:
         account['first_login'] = True

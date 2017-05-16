@@ -156,8 +156,8 @@ def get_args():
                             help='Allow Pokemons on this list to be captured.',
                             default=[16, 19, 41, 129, 163, 161, 193])
     catch_list.add_argument('-pclf', '--pokemon-catch-list-file',
-                            default='', help='File containing a list of ' +
-                                             'Pokemon allowed to be captured.')
+                            default='', help='File containing Pokemon IDs ' +
+                                             'allowed to be caught.')
     parser.add_argument('-amt', '--account-max-throws',
                         help='Maximum number of Pokeball throws per hour.',
                         type=int, default=110)
@@ -197,16 +197,12 @@ def get_args():
                                     'webhooks. Specified as Pokemon ID.'))
     webhook_list.add_argument('-wwhtf', '--webhook-whitelist-file',
                               default='', help='File containing a list of '
-                                               'Pokemon to send to '
-                                               'webhooks. Pokemon are '
-                                               ' specified by their name, '
-                                               ' one on each line.')
+                                               'Pokemon IDs to be sent to '
+                                               'webhooks.')
     webhook_list.add_argument('-wblkf', '--webhook-blacklist-file',
                               default='', help='File containing a list of '
-                                               'Pokemon NOT to send to'
-                                               'webhooks. Pokemon are '
-                                               ' specified by their name, '
-                                               ' one on each line.')
+                                               'Pokemon IDs NOT to be sent to'
+                                               'webhooks.')
     parser.add_argument('-ld', '--login-delay',
                         help='Time delay between each login attempt.',
                         type=float, default=6)
@@ -674,6 +670,36 @@ def get_args():
                   ": Error: no accounts specified. Use -a, -u, and -p or " +
                   "--accountcsv to add accounts.")
             sys.exit(1)
+
+        if args.encounter_whitelist_file:
+            with open(args.encounter_whitelist_file) as f:
+                args.encounter_whitelist = frozenset(
+                    [int(p_id.strip()) for p_id in f])
+        else:
+            args.encounter_whitelist = frozenset(
+                [int(i) for i in args.encounter_whitelist])
+
+        if args.pokemon_catch_list_file:
+            with open(args.pokemon_catch_list_file) as f:
+                args.pokemon_catch_list = frozenset(
+                    [int(p_id.strip()) for p_id in f])
+        else:
+            args.pokemon_catch_list = frozenset(
+                [int(i) for i in args.pokemon_catch_list])
+
+        if args.webhook_whitelist_file:
+            with open(args.webhook_whitelist_file) as f:
+                args.webhook_whitelist = frozenset(
+                    [int(p_id.strip()) for p_id in f])
+        elif args.webhook_blacklist_file:
+            with open(args.webhook_blacklist_file) as f:
+                args.webhook_blacklist = frozenset(
+                    [int(p_id.strip()) for p_id in f])
+        else:
+            args.webhook_blacklist = frozenset(
+                [int(i) for i in args.webhook_blacklist])
+            args.webhook_whitelist = frozenset(
+                [int(i) for i in args.webhook_whitelist])
 
         # Prepare the L30 accounts for the account sets.
         args.accounts_L30 = []
