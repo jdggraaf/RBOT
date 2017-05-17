@@ -1770,9 +1770,9 @@ def hex_bounds(center, steps=None, radius=None):
 def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
               api, status, now_date, account, account_sets, key_scheduler):
     pokemon = {}
-    pokemons_caught = []
+    pokemons_caught = 0
     pokestops = {}
-    pokestops_visited = []
+    pokestops_visited = 0
     gyms = {}
     skipped = 0
     stopsskipped = 0
@@ -2122,8 +2122,9 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     pokemon[p['encounter_id']]['cp'] = cp
 
             # Try to capture wild Pokemon.
-            if account['level'] < args.account_max_level and (
-               pokemon_id in args.pokemon_catch_list):
+            catch_enabled = account['level'] < args.account_max_level and (
+                            pokemons_caught < 3)
+            if catch_enabled and pokemon_id in args.pokemon_catch_list:
 
                 if using_accountset or encounter_result is None:
                     time.sleep(args.encounter_delay)
@@ -2157,7 +2158,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
                         c_pokemon = catch_pokemon(status, api, account, p, iv)
                         if c_pokemon:
-                            pokemons_caught.append(pokemon_id)
+                            pokemons_caught += 1
                             if c_pokemon['pokemon_id'] == 132:
                                 status['message'] = (
                                     "Caught Pokemon #{} is a Ditto!").format(
@@ -2229,7 +2230,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                             log.debug('Pokestop: %s is in range.', f['id'])
                             try:
                                 if handle_pokestop(status, api, account, f):
-                                    pokestops_visited.append(f['id'])
+                                    pokestops_visited += 1
                             except Exception as e:
                                 log.warning('Exception visiting Pokestop: %s',
                                             repr(e))
