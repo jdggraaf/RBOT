@@ -602,7 +602,6 @@ def randomize_throw(excellent=0.20, great=0.5, nice=0.2, curveball=0.8):
     return throw
 
 
-# TODO: add status messages and improve account statistics.
 def catch_pokemon(status, api, account, pokemon, iv):
     pokemon_id = pokemon['pokemon_data']['pokemon_id']
     encounter_id = pokemon['encounter_id']
@@ -684,28 +683,21 @@ def catch_pokemon(status, api, account, pokemon, iv):
                 # Parse Pokemons in response and update account inventory.
                 caught_pokemon = parse_caught_pokemon(res, catch_id)
 
-                if caught_pokemon:
-                    account['pokemons'][catch_id] = caught_pokemon
-                    if caught_pokemon['pokemon_id'] == 132:
-                        status['message'] = (
-                            'Caught Pokemon #{} {} was a Ditto!').format(
-                                pokemon_id, catch_id)
-                        log.info(status['message'])
-                        # Update Pokemon information.
-                        pokemon.update(caught_pokemon)
-                else:
+                if not caught_pokemon:
                     log.error('Pokemon %s not found in inventory.', catch_id)
                     return False
 
+                # Add Pokemon to account inventory.
+                account['pokemons'][catch_id] = caught_pokemon
                 # Don't release all Pokemon.
                 if iv > 93 and random.random() < 0.75:
                     log.info('Kept Pokemon #%d (IV %d%) in inventory (%d/%d).',
                              pokemon_id, iv,
                              len(account['pokemons']), account['max_pokemons'])
-                    return True
+                    return caught_pokemon
 
                 release_pokemon(status, api, account, catch_id)
-                return True
+                return caught_pokemon
 
             if catch_status == 2:
                 status['message'] = (
