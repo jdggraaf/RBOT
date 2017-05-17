@@ -436,7 +436,8 @@ def parse_caught_pokemon(response_dict, catch_id):
                     'height': p_data['height_m'],
                     'weight': p_data['weight_kg'],
                     'gender': p_data['pokemon_display']['gender'],
-                    'cp': p_data['cp']
+                    'cp': p_data['cp'],
+                    'cp_multiplier': p_data['cp_multiplier']
                 }
 
     return False
