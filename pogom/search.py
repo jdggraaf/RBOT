@@ -84,6 +84,7 @@ def switch_status_printer(display_type, current_page, mainlog,
                 display_type[0] = 'workers'
         elif command.isdigit():
             current_page[0] = int(command)
+        elif command.lower() == 'w':
             mainlog.handlers[0].setLevel(logging.CRITICAL)
             display_type[0] = 'workers'
         elif command.lower() == 'f':
@@ -355,10 +356,10 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
 
         # Print the status_text for the current screen.
         status_text.append((
-            'Page {}/{}. Page number to switch pages. F to show on hold ' +
-            'accounts. H to show hash status. <ENTER> alone to switch ' +
-            'between status and log view').format(current_page[0],
-                                                  total_pages))
+            'Page {}/{}. Page number to switch pages. W to show workers. ' +
+            'F to show accounts on hold. H to show hash status. A to show ' +
+            'account stats. <ENTER> alone to switch between status and log ' +
+            'views.').format(current_page[0], total_pages))
         # Clear the screen.
         os.system('cls' if os.name == 'nt' else 'clear')
         # Print status.
