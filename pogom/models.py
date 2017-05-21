@@ -2038,6 +2038,23 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                                 + ' is only level '
                                                 + encounter_level + '.')
 
+                            status_code = responses['ENCOUNTER'].get(
+                                            'status', 0)
+                            if status_code == 8:
+                                # Temporary mark.
+                                hlvl_account['captcha'] = True
+                                log.error('Account %s has failed a encounter.'
+                                          + ' Received Anti-Cheat response ('
+                                          + 'a "%s" status response).',
+                                          hlvl_account['username'],
+                                          status_code)
+
+                            if status_code != 1:
+                                log.error('Account %s has failed a encounter.'
+                                          + ' Account will not be used. Got '
+                                          + 'a "%s" status response.',
+                                          hlvl_account['username'],
+                                          status_code)
                         # We're done with the encounter. If it's from an
                         # AccountSet, release account back to the pool.
                         if using_accountset:
@@ -2140,6 +2157,15 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     captcha_url = responses['CHECK_CHALLENGE']['challenge_url']
                     if len(captcha_url) > 1:
                         log.debug('Account encountered a reCaptcha.')
+
+                    status_code = responses['ENCOUNTER'].get('status', 0)
+                    if status_code == 8:
+                        log.error('Account %s has failed a encounter.'
+                                  + ' Received Anti-Cheat response ('
+                                  + 'a "%s" status response).',
+                                  account['username'], status_code)
+                        raise Exception('Anti-Cheat response received.'
+                                        + ' Stopping account...')
 
                     w_pokemon = responses['ENCOUNTER'].get('wild_pokemon', {})
                     if w_pokemon:
