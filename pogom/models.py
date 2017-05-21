@@ -2042,6 +2042,24 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                                 + ' is only level '
                                                 + encounter_level + '.')
 
+                            status_code = responses['ENCOUNTER'].get(
+                                            'status', 0)
+
+                            if status_code == 8:
+                                # Temporary mark.
+                                hlvl_account['captcha'] = True
+                                log.error('Account %s has failed a encounter.'
+                                          + ' Received Anti-Cheat response ('
+                                          + 'a "%s" status response).',
+                                          hlvl_account['username'],
+                                          status_code)
+
+                            if status_code != 1:
+                                log.error('Account %s has failed a encounter.'
+                                          + ' Account will not be used. Got '
+                                          + 'a "%s" status response.',
+                                          hlvl_account['username'],
+                                          status_code)
                         # We're done with the encounter. If it's from an
                         # AccountSet, release account back to the pool.
                         if using_accountset:
@@ -2116,16 +2134,13 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     'move_1': pokemon_info['move_1'],
                     'move_2': pokemon_info['move_2'],
                     'height': pokemon_info['height_m'],
-                    'weight': pokemon_info['weight_kg']
+                    'weight': pokemon_info['weight_kg'],
+                    'cp_multiplier': pokemon_info.get('cp_multiplier', None)
                 })
 
                 # Only add CP if we're level 30+.
                 if encounter_level >= 30:
                     pokemon[p['encounter_id']]['cp'] = cp
-                    pokemon[p['encounter_id']][
-                        'cp_multiplier'] = pokemon_info.get(
-                        'cp_multiplier', None)
-
             if args.webhooks:
                 if (pokemon_id in args.webhook_whitelist or
                     (not args.webhook_whitelist and pokemon_id
