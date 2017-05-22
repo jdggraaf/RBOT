@@ -366,15 +366,15 @@ def parse_account_stats(args, api, response_dict, account):
 
     cleanup_account_stats(account, args.pokestop_refresh_time)
 
-    # Parse inventory for items and Pokemons.
+    # Parse inventory for Items, Pokemons and Eggs.
     inventory_items = response_dict['responses'].get(
         'GET_INVENTORY', {}).get(
         'inventory_delta', {}).get(
         'inventory_items', [])
     player_stats = {}
-    player_items = {}
-    total_items = 0
-    total_pokemons = 0
+    parsed_items = 0
+    parsed_pokemons = 0
+    parsed_eggs = 0
     for item in inventory_items:
         item_data = item.get('inventory_item_data', {})
         if 'player_stats' in item_data:
@@ -383,14 +383,25 @@ def parse_account_stats(args, api, response_dict, account):
             item_id = item_data['item'].get('item_id', 0)
             item_count = item_data['item'].get('count', 0)
             if item_id:
-                player_items[item_id] = item_count
-                total_items += item_count
+                account['items'][item_id] = item_count
+                parsed_items += item_count
+        elif 'egg_incubators' in item_data:
+            incubators = item_data['egg_incubators']['egg_incubator']
+            for incubator in incubators:
+                # Cut off "EggIncubatorProto-" from incubator ID.
+                incubator_id = incubator['id'][18:]
+                account['incubators'][incubator_id] = {
+                    'item_id': incubator['item_id'],
+                    'uses_remaining': incubator.get('uses_remaining', -1),
+                    'pokemon_id': incubator.get('pokemon_id', 0)
+                }
         if 'pokemon_data' in item_data:
             p_data = item_data['pokemon_data']
             p_id = p_data.get('id', 0L)
             pokemon_id = p_data.get('pokemon_id', 0)
+            is_egg = p_data.get('is_egg', False)
             if p_id and pokemon_id:
-                total_pokemons += 1
+                parsed_pokemons += 1
                 # Careful with this dictionary, used to update Pokemon data.
                 account['pokemons'][p_id] = {
                     'pokemon_id': p_data['pokemon_id'],
@@ -399,9 +410,16 @@ def parse_account_stats(args, api, response_dict, account):
                     'height': p_data['height_m'],
                     'weight': p_data['weight_kg'],
                     'gender': p_data['pokemon_display']['gender'],
-                    'cp': p_data['cp']
+                    'cp': p_data['cp'],
+                    'cp_multiplier': p_data['cp_multiplier']
                 }
-
+            elif p_id and is_egg:
+                parsed_eggs += 1
+                account['eggs'][p_id] = {
+                    'captured_cell_id': p_data['captured_cell_id'],
+                    'creation_time_ms': p_data['creation_time_ms'],
+                    'egg_km_walked_target': p_data['egg_km_walked_target']
+                }
     player_level = player_stats.get('level', 0)
     if player_level > 0:
         if account['level'] > 0 and player_level > account['level']:
@@ -416,8 +434,6 @@ def parse_account_stats(args, api, response_dict, account):
                             account['username'])
 
         account['level'] = player_level
-        account['items'] = player_items
-        account['item_count'] = total_items
         account['experience'] = player_stats.get('experience', 0L)
         account['encounters'] = player_stats.get('pokemons_encountered', 0)
         account['throws'] = player_stats.get('pokeballs_thrown', 0)
@@ -425,10 +441,11 @@ def parse_account_stats(args, api, response_dict, account):
         account['spins'] = player_stats.get('poke_stop_visits', 0)
         account['walked'] = player_stats.get('km_walked', 0.0)
 
-        log.debug('Account %s is level %d, has %d Pokemons and %d items: %s',
-                  account['username'], player_level, len(account['pokemons']),
-                  total_items, player_items)
-
+        log.debug('Account %s is level %d with %d Items, %d Pokemons and %d ' +
+                  'Eggs', account['username'], player_level, parsed_items,
+                  parsed_pokemons, parsed_eggs)
+        log.debug('Account %s has incubators: %s',
+                  account['username'], account['incubators'])
         return True
 
     return False
