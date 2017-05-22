@@ -54,6 +54,8 @@ def setup_api(args, status):
 
 
 # Use API to check the login status, and retry the login if possible.
+# Request GET_PLAYER data to ensure that account is working.
+# Request LEVEL_UP_REWARDS to accept account level up rewards.
 def check_login(args, account, api, position, proxy_url):
 
     # Logged in? Enough time left? Cool!
@@ -83,9 +85,9 @@ def check_login(args, account, api, position, proxy_url):
                     password=account['password'])
             break
         except BannedAccountException:
+            account['banned'] = True
             log.error('Account %s is banned from Pokemon Go.',
                       account['username'])
-            time.sleep(args.login_delay)
             break
         except AuthException:
             num_tries += 1
@@ -102,8 +104,36 @@ def check_login(args, account, api, position, proxy_url):
             account['username'], num_tries)
         raise TooManyLoginAttempts('Exceeded login attempts.')
 
+    time.sleep(random.uniform(2, 3))
+    if get_player_state(api, account):
+        if account['warning']:
+            log.warning('Account %s has received a warning.',
+                        account['username'])
+
+        # Check tutorial completion.
+        if account['first_login']:
+            account['first_login'] = False
+
+            # Check if there are level up rewards to claim.
+            time.sleep(random.uniform(2.0, 3.0))
+            if request_level_up_rewards(api, account):
+                log.debug('Account %s collected its level up rewards.',
+                          account['username'])
+            else:
+                log.debug('Account %s failed to collect level up rewards.',
+                          account['username'])
+
+            if args.complete_tutorial:
+                if not all(x in account['tutorials']
+                           for x in (0, 1, 3, 4, 7)):
+                    log.info('Completing tutorial steps for %s.',
+                             account['username'])
+                    complete_tutorial(api, account)
+                else:
+                    log.info('Account %s has already completed ' +
+                             'the tutorial.', account['username'])
     log.debug('Login for account %s successful.', account['username'])
-    time.sleep(20)
+    time.sleep(random.uniform(12, 17))
 
 
 def get_player_level(map_dict):
@@ -135,7 +165,6 @@ def get_player_state(api, account):
         res = req.check_challenge()
         res = req.call()
 
-        time.sleep(random.uniform(2, 3))
         get_player = res.get('responses', {}).get('GET_PLAYER', {})
 
         if get_player:
@@ -328,18 +357,7 @@ def cleanup_account_stats(account, pokestop_timeout):
 
 # Parse player stats and inventory into account dictionary.
 # Manage account statistics and does regular cleanup.
-# Send LevelUpRewards request to check for and accept level up rewards.
 def parse_account_stats(args, api, response_dict, account):
-    if account['first_login']:
-        # Check if there are level up rewards to claim.
-        time.sleep(random.uniform(2.0, 3.0))
-        if request_level_up_rewards(api, account):
-            log.info('Account %s collected its level up rewards.',
-                     account['username'])
-        else:
-            log.info('Account %s failed to collect level up rewards.',
-                     account['username'])
-
     # Check if account is banned.
     status_code = response_dict.get('status_code', -1)
     if status_code == 3:
