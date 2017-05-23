@@ -11,7 +11,8 @@ from pgoapi import PGoApi
 from pgoapi.exceptions import AuthException, BannedAccountException
 
 from .fakePogoApi import FakePogoApi
-from .utils import generate_device_info, equi_rect_distance
+from .utils import (generate_device_info, equi_rect_distance,
+                    parse_new_timestamp_ms)
 from .proxy import get_new_proxy
 
 log = logging.getLogger(__name__)
@@ -104,18 +105,21 @@ def check_login(args, account, api, position, proxy_url):
             account['username'], num_tries)
         raise TooManyLoginAttempts('Exceeded login attempts.')
 
-    time.sleep(random.uniform(2, 3))
+    time.sleep(random.uniform(.8, 1.7))
     if get_player_state(api, account):
         if account['warning']:
             log.warning('Account %s has received a warning.',
                         account['username'])
 
-        # Check tutorial completion.
-        if account['first_login']:
-            account['first_login'] = False
+        time.sleep(random.uniform(.6, 1.1))
+        player_profile = request_get_player_profile(api, account)
+        if not player_profile:
+            log.warning('Failed to retrieve player profile from account %s.',
+                        account['username'])
 
+        if parse_account_stats(args, api, player_profile, account):
             # Check if there are level up rewards to claim.
-            time.sleep(random.uniform(2.0, 3.0))
+            time.sleep(random.uniform(.4, .7))
             if request_level_up_rewards(api, account):
                 log.debug('Account %s collected its level up rewards.',
                           account['username'])
@@ -123,6 +127,9 @@ def check_login(args, account, api, position, proxy_url):
                 log.debug('Account %s failed to collect level up rewards.',
                           account['username'])
 
+        # Check tutorial completion.
+        if account['first_login']:
+            account['first_login'] = False
             if args.complete_tutorial:
                 if not all(x in account['tutorials']
                            for x in (0, 1, 3, 4, 7)):
@@ -132,6 +139,7 @@ def check_login(args, account, api, position, proxy_url):
                 else:
                     log.info('Account %s has already completed ' +
                              'the tutorial.', account['username'])
+
     log.debug('Login for account %s successful.', account['username'])
     time.sleep(random.uniform(12, 17))
 
@@ -256,9 +264,9 @@ def complete_tutorial(api, account):
         request = api.create_request()
         request.get_player(
             player_locale={
-                'country': 'US',
+                'country': 'GB',
                 'language': 'en',
-                'timezone': 'America/Denver'})
+                'timezone': 'Europe/London'})
         responses = request.call().get('responses', {})
 
         inventory = responses.get('GET_INVENTORY', {}).get(
@@ -285,9 +293,9 @@ def complete_tutorial(api, account):
         request = api.create_request()
         request.get_player(
             player_locale={
-                'country': 'US',
+                'country': 'GB',
                 'language': 'en',
-                'timezone': 'America/Denver'})
+                'timezone': 'Europe/London'})
         request.call()
 
     if 7 not in tutorial_state:
@@ -501,7 +509,7 @@ def recycle_items(status, api, account):
             drop_count = int(item_count * item_ratios[i])
 
             time.sleep(random.uniform(3.0, 5.0))
-            new_count = request_recycle_item(api, item_id, drop_count)
+            new_count = request_recycle_item(api, account, item_id, drop_count)
 
             if new_count:
                 account['items'][item_id] = new_count
@@ -665,8 +673,8 @@ def catch_pokemon(status, api, account, pokemon, iv):
             log.info(status['message'])
 
             time.sleep(random.uniform(2, 4))
-            if request_use_item_encounter(api, encounter_id, spawnpoint_id,
-                                          berry['id']):
+            if request_use_item_encounter(api, account, encounter_id,
+                                          spawnpoint_id, berry['id']):
                 account['items'][berry['id']] -= 1
                 status['message'] = (
                     'Used a {} in encounter #{} - attempt {}.').format(
@@ -687,8 +695,8 @@ def catch_pokemon(status, api, account, pokemon, iv):
         log.info(status['message'])
 
         time.sleep(random.uniform(3, 5))
-        res = request_catch_pokemon(api, encounter_id, spawnpoint_id, throw,
-                                    ball['id'])
+        res = request_catch_pokemon(api, account, encounter_id, spawnpoint_id,
+                                    throw, ball['id'])
         account['session_throws'] += 1
 
         catch_pokemon = res['responses'].get('CATCH_POKEMON', {})
@@ -768,10 +776,10 @@ def release_pokemon(status, api, account, catch_id):
         release_count = int(total_pokemons * 0.03)  # should be around 9
         release_ids = random.sample(account['pokemons'].keys(), release_count)
         release_ids.append(catch_id)
-        release = request_release_pokemon(api, 0, release_ids)
+        release = request_release_pokemon(api, account, 0, release_ids)
     else:
         release_ids.append(catch_id)
-        release = request_release_pokemon(api, catch_id)
+        release = request_release_pokemon(api, account, catch_id)
 
     if release:
         status['message'] = 'Released Pokemon: {}'.format(release_ids)
@@ -797,7 +805,7 @@ def recycle_pokemons(status, api, account, percentage=0.03):
         for pokemon_id in pokemon_ids:
             time.sleep(random.uniform(3, 5))
 
-            if request_release_pokemon(api, pokemon_id):
+            if request_release_pokemon(api, account, pokemon_id):
                 status['message'] = 'Released Pokemon {}.'.format(pokemon_id)
                 log.info(status['message'])
             else:
@@ -837,24 +845,26 @@ def request_fort_search(api, pokestop, location):
     return False
 
 
-def encounter_pokemon_request(api, encounter_id, spawnpoint_id, scan_location):
+def encounter_pokemon_request(api, account, encounter_id, spawnpoint_id,
+                              scan_location):
     try:
         # Setup encounter request envelope.
         req = api.create_request()
-        encounter_result = req.encounter(
+        response = req.encounter(
             encounter_id=encounter_id,
             spawn_point_id=spawnpoint_id,
             player_latitude=scan_location[0],
             player_longitude=scan_location[1])
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings()
+        # req.download_settings()
         req.get_buddy_walked()
-        encounter_result = req.call()
-        # NOTE: response dictionary should be "cleared" outside this method.
-        return encounter_result
+        response = req.call()
+
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
+        return response
     except Exception as e:
         log.error('Exception while encountering Pokémon: %s.', repr(e))
 
@@ -863,19 +873,20 @@ def encounter_pokemon_request(api, encounter_id, spawnpoint_id, scan_location):
 
 # https://docs.pogodev.org/api/messages/RecycleItemProto/
 # https://docs.pogodev.org/api/messages/RecycleItemOutProto
-def request_recycle_item(api, item_id, amount):
+def request_recycle_item(api, account, item_id, amount):
     try:
         req = api.create_request()
-        res = req.recycle_inventory_item(item_id=item_id, count=amount)
+        response = req.recycle_inventory_item(item_id=item_id, count=amount)
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings()
+        # req.download_settings()
         req.get_buddy_walked()
-        res = req.call()
+        response = req.call()
 
-        recycle_item = res['responses']['RECYCLE_INVENTORY_ITEM']
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
+        recycle_item = response['responses']['RECYCLE_INVENTORY_ITEM']
         if recycle_item['result'] == 1:
             return recycle_item['new_count']
 
@@ -885,21 +896,43 @@ def request_recycle_item(api, item_id, amount):
     return False
 
 
+def request_get_player_profile(api, account):
+    try:
+        req = api.create_request()
+        req.get_player_profile()
+        req.check_challenge()
+        req.get_hatched_eggs()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
+        req.check_awarded_badges()
+        req.download_settings()
+        req.get_buddy_walked()
+        response = req.call()
+
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
+        return response
+    except Exception as e:
+        log.warning('Exception while requesting player profile: %s', repr(e))
+
+    return False
+
+
 # https://docs.pogodev.org/api/messages/LevelUpRewardsProto/
 # https://docs.pogodev.org/api/messages/LevelUpRewardsOutProto/
 def request_level_up_rewards(api, account):
     try:
         req = api.create_request()
-        res = req.level_up_rewards(level=account['level'])
+        response = req.level_up_rewards(level=account['level'])
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings()
+        if account['first_login']:
+            req.download_settings()
         req.get_buddy_walked()
-        res = req.call()
+        response = req.call()
 
-        rewards = res['responses']['LEVEL_UP_REWARDS'].get('result', 0)
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
+        rewards = response['responses']['LEVEL_UP_REWARDS'].get('result', 0)
 
         if rewards > 0:
             return True
@@ -912,10 +945,11 @@ def request_level_up_rewards(api, account):
 
 # https://docs.pogodev.org/api/messages/CatchPokemonProto/
 # https://docs.pogodev.org/api/messages/CatchPokemonOutProto/
-def request_catch_pokemon(api, encounter_id, spawnpoint_id, throw, ball_id=1):
+def request_catch_pokemon(api, account, encounter_id, spawnpoint_id, throw,
+                          ball_id=1):
     try:
         req = api.create_request()
-        res = req.catch_pokemon(
+        response = req.catch_pokemon(
             encounter_id=encounter_id,
             pokeball=ball_id,
             normalized_reticle_size=throw['reticle_size'],
@@ -925,13 +959,15 @@ def request_catch_pokemon(api, encounter_id, spawnpoint_id, throw, ball_id=1):
             normalized_hit_position=throw['hit_position'])
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings()
+        # req.download_settings()
         req.get_buddy_walked()
-        res = req.call()
+        response = req.call()
 
-        return res
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
+
+        return response
     except Exception as e:
         log.warning('Exception while catching Pokemon: %s', repr(e))
 
@@ -940,7 +976,8 @@ def request_catch_pokemon(api, encounter_id, spawnpoint_id, throw, ball_id=1):
 
 # https://docs.pogodev.org/api/messages/UseItemCaptureProto/
 # https://docs.pogodev.org/api/messages/UseItemCaptureOutProto/
-def request_use_item_encounter(api, encounter_id, spawnpoint_id, berry_id=701):
+def request_use_item_encounter(api, account, encounter_id, spawnpoint_id,
+                               berry_id=701):
     try:
         req = api.create_request()
         res = req.use_item_encounter(
@@ -949,12 +986,13 @@ def request_use_item_encounter(api, encounter_id, spawnpoint_id, berry_id=701):
             spawn_point_guid=spawnpoint_id)
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings()
+        # req.download_settings()
         req.get_buddy_walked()
         res = req.call()
 
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(res)
         result = res['responses']['USE_ITEM_ENCOUNTER'].get('active_item', 0)
 
         if result == berry_id:
@@ -968,22 +1006,23 @@ def request_use_item_encounter(api, encounter_id, spawnpoint_id, berry_id=701):
 
 # https://docs.pogodev.org/api/messages/ReleasePokemonProto
 # https://docs.pogodev.org/api/messages/ReleasePokemonOutProto/
-def request_release_pokemon(api, pokemon_id, release_ids=[]):
+def request_release_pokemon(api, account, pokemon_id, release_ids=[]):
     try:
         req = api.create_request()
-        res = req.release_pokemon(
+        response = req.release_pokemon(
             pokemon_id=pokemon_id,
             pokemon_ids=release_ids
         )
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings()
+        # req.download_settings()
         req.get_buddy_walked()
-        res = req.call()
+        response = req.call()
 
-        result = res['responses']['RELEASE_POKEMON'].get('result', 0)
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
+        result = response['responses']['RELEASE_POKEMON'].get('result', 0)
 
         if result == 1:
             return True

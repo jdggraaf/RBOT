@@ -439,7 +439,7 @@ function pokemonLabel(item) {
         var pokemonLevel = getPokemonLevel(cpMultiplier)
         details = `
         <div>
-            CP: ${cp} | Level: ${pokemonLevel} 
+            CP: ${cp} | Level: ${pokemonLevel}
         </div>
         `
 

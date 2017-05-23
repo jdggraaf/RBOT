@@ -651,7 +651,8 @@ def get_args():
         for i, username in enumerate(args.username):
             args.accounts.append({'username': username,
                                   'password': args.password[i],
-                                  'auth_service': args.auth_service[i]})
+                                  'auth_service': args.auth_service[i],
+                                  'last_timestamp_ms': now()})
 
         # Make max workers equal number of accounts if unspecified, and disable
         # account switching.
@@ -725,14 +726,13 @@ def get_args():
                     username = line[1].strip()
                     password = line[2].strip()
 
-                    hlvl_account = {
+                    args.accounts_L30.append({
                         'auth_service': service,
                         'username': username,
                         'password': password,
-                        'captcha': False
-                    }
-
-                    args.accounts_L30.append(hlvl_account)
+                        'captcha': False,
+                        'last_timestamp_ms': now()
+                    })
 
         # Decide which scanning mode to use.
         if args.spawnpoint_scanning:
@@ -987,3 +987,17 @@ def calc_pokemon_level(cp_multiplier):
         pokemon_level = 171.0112688 * cp_multiplier - 95.20425243
     pokemon_level = int((round(pokemon_level) * 2) / 2)
     return pokemon_level
+
+
+# Parse new timestamp from the GET_INVENTORY response.
+def parse_new_timestamp_ms(response_dict):
+    timestamp = response_dict['responses'].get(
+        'GET_INVENTORY', {}).get(
+        'inventory_delta', {}).get(
+        'new_timestamp_ms', 0)
+
+    if timestamp == 0:
+        log.warning('Failed to parse new timestamp from API response.')
+        return now()
+
+    return timestamp

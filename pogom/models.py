@@ -2006,6 +2006,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     # Encounter Pokemon.
                     encounter_result = encounter_pokemon_request(
                         hlvl_api,
+                        hlvl_account,
                         p['encounter_id'],
                         p['spawn_point_id'],
                         scan_location)
@@ -2038,7 +2039,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                                 + ' or higher, but account '
                                                 + hlvl_account['username']
                                                 + ' is only level '
-                                                + encounter_level + '.')
+                                                + str(encounter_level) + '.')
 
                             status_code = responses['ENCOUNTER'].get(
                                             'status', 0)
@@ -2150,6 +2151,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     # Encounter Pokemon.
                     encounter_result = encounter_pokemon_request(
                         api,
+                        account,
                         p['encounter_id'],
                         p['spawn_point_id'],
                         step_location)
