@@ -444,8 +444,6 @@ def parse_account_stats(args, api, response_dict, account):
         log.debug('Account %s is level %d with %d Items, %d Pokemons and %d ' +
                   'Eggs', account['username'], player_level, parsed_items,
                   parsed_pokemons, parsed_eggs)
-        log.debug('Account %s has incubators: %s',
-                  account['username'], account['incubators'])
         return True
 
     return False

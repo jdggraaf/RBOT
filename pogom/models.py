@@ -2202,7 +2202,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                     'move_2': c_pokemon['move_2'],
                                     'height': c_pokemon['height'],
                                     'weight': c_pokemon['weight'],
-                                    'gender': c_pokemon['gender']
+                                    'gender': c_pokemon['gender'],
+                                    'cp_multiplier': c_pokemon['cp_multiplier']
                                 })
                                 # Only add CP if we're level 30+.
                                 encounter_level = account['level']
