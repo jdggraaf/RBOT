@@ -105,13 +105,22 @@ def check_login(args, account, api, position, proxy_url):
             account['username'], num_tries)
         raise TooManyLoginAttempts('Exceeded login attempts.')
 
-    time.sleep(random.uniform(.8, 1.7))
+    try:
+        # Make an empty request to mimick real app behavior.
+        time.sleep(random.uniform(1.7, 2.9))
+        request = api.create_request()
+        request.call()
+    except Exception as e:
+        log.error('Login for account %s failed. Exception in call request: %s',
+                  account['username'], repr(e))
+
+    time.sleep(random.uniform(.6, 1.1))
     if get_player_state(api, account):
         if account['warning']:
             log.warning('Account %s has received a warning.',
                         account['username'])
 
-        time.sleep(random.uniform(.6, 1.1))
+        time.sleep(random.uniform(.7, 1.2))
         player_profile = request_get_player_profile(api, account)
         if not player_profile:
             log.warning('Failed to retrieve player profile from account %s.',
@@ -140,7 +149,7 @@ def check_login(args, account, api, position, proxy_url):
                     log.info('Account %s has already completed ' +
                              'the tutorial.', account['username'])
 
-    # incubate_eggs(api, account)
+    incubate_eggs(api, account)
 
     log.debug('Login for account %s successful.', account['username'])
     time.sleep(random.uniform(12, 17))
@@ -464,7 +473,7 @@ def parse_egg_incubator(account, response_dict):
         incubator = response_dict['egg_incubator']
         account['incubators'][incubator['id']] = {
             'item_id': incubator['item_id'],
-            'uses_remaining': incubator.get('uses_remaining', -1),
+            'uses_remaining': incubator.get('uses_remaining', 0),
             'pokemon_id': incubator.get('pokemon_id', 0),
             'target_km_walked': incubator.get('target_km_walked', 0)
         }
@@ -485,8 +494,8 @@ def incubate_eggs(api, account):
             result = response.get('result', -1)
             if result == 1 and parse_egg_incubator(account, response):
                 message = (
-                    'Egg #{} ({:.1f} km) was put on incubator #{}.').format(
-                    egg_id, target_km, incubator_id)
+                    'Egg #{} ({:.1f} km) was put on incubator {} #{}.').format(
+                    egg_id, target_km, item_id, incubator_id)
                 log.info(message)
                 del account['eggs'][egg_id]
             else:
@@ -1078,11 +1087,10 @@ def request_release_pokemon(api, account, pokemon_id, release_ids=[]):
 # https://docs.pogodev.org/api/messages/UseItemEggIncubatorProto/
 # https://docs.pogodev.org/api/messages/UseItemEggIncubatorOutProto/
 def request_use_item_egg_incubator(api, account, incubator_id, egg_id):
-    item_id = 'EggIncubatorProto-{}'.format(incubator_id)
     try:
         req = api.create_request()
         res = req.use_item_egg_incubator(
-            item_id=item_id,
+            item_id=incubator_id,
             pokemon_id=egg_id
         )
         req.check_challenge()

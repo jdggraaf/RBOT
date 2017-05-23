@@ -32,7 +32,7 @@ from .utils import (get_pokemon_name, get_pokemon_rarity, get_pokemon_types,
                     get_move_type, clear_dict_response, calc_pokemon_level)
 from .transform import transform_from_wgs_to_gcj, get_new_coords
 from .customLog import printPokemon
-from .account import (setup_api, check_login, get_player_level, catch_pokemon,
+from .account import (setup_api, check_login, catch_pokemon,
                       encounter_pokemon_request, handle_pokestop)
 
 log = logging.getLogger(__name__)
@@ -2003,6 +2003,14 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     check_login(args, hlvl_account, hlvl_api, scan_location,
                                 status['proxy_url'])
 
+                    encounter_level = hlvl_account['level']
+                    if encounter_level < 30:
+                        raise Exception('Expected account of level 30'
+                                        + ' or higher, but account '
+                                        + hlvl_account['username']
+                                        + ' is only level '
+                                        + str(encounter_level) + '.')
+
                     # Encounter Pokemon.
                     encounter_result = encounter_pokemon_request(
                         hlvl_api,
@@ -2028,19 +2036,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                       + ' Account will not be used.',
                                       hlvl_account['username'])
                         else:
-                            # Update level indicator before we clear the
-                            # response.
-                            encounter_level = get_player_level(
-                                encounter_result)
-
-                            # User error?
-                            if encounter_level < 30:
-                                raise Exception('Expected account of level 30'
-                                                + ' or higher, but account '
-                                                + hlvl_account['username']
-                                                + ' is only level '
-                                                + str(encounter_level) + '.')
-
                             status_code = responses['ENCOUNTER'].get(
                                             'status', 0)
                             if status_code == 8:
