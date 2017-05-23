@@ -140,6 +140,8 @@ def check_login(args, account, api, position, proxy_url):
                     log.info('Account %s has already completed ' +
                              'the tutorial.', account['username'])
 
+    # incubate_eggs(api, account)
+
     log.debug('Login for account %s successful.', account['username'])
     time.sleep(random.uniform(12, 17))
 
@@ -396,12 +398,11 @@ def parse_account_stats(args, api, response_dict, account):
         elif 'egg_incubators' in item_data:
             incubators = item_data['egg_incubators']['egg_incubator']
             for incubator in incubators:
-                # Cut off "EggIncubatorProto-" from incubator ID.
-                incubator_id = incubator['id'][18:]
-                account['incubators'][incubator_id] = {
+                account['incubators'][incubator['id']] = {
                     'item_id': incubator['item_id'],
-                    'uses_remaining': incubator.get('uses_remaining', -1),
-                    'pokemon_id': incubator.get('pokemon_id', 0)
+                    'uses_remaining': incubator.get('uses_remaining', 0),
+                    'pokemon_id': incubator.get('pokemon_id', 0),
+                    'target_km_walked': incubator.get('target_km_walked', 0)
                 }
         if 'pokemon_data' in item_data:
             p_data = item_data['pokemon_data']
@@ -455,6 +456,47 @@ def parse_account_stats(args, api, response_dict, account):
         return True
 
     return False
+
+
+# Parse inventory for Egg Incubators.
+def parse_egg_incubator(account, response_dict):
+    if 'egg_incubator' in response_dict:
+        incubator = response_dict['egg_incubator']
+        account['incubators'][incubator['id']] = {
+            'item_id': incubator['item_id'],
+            'uses_remaining': incubator.get('uses_remaining', -1),
+            'pokemon_id': incubator.get('pokemon_id', 0),
+            'target_km_walked': incubator.get('target_km_walked', 0)
+        }
+        return True
+    return False
+
+
+def incubate_eggs(api, account):
+    for incubator_id, incubator in account['incubators'].iteritems():
+        if incubator['pokemon_id'] == 0:
+            item_id = incubator['item_id']
+            egg_id = random.choice(account['eggs'].keys())
+            target_km = account['eggs'][egg_id]['egg_km_walked_target']
+
+            time.sleep(random.uniform(2.0, 3.0))
+            response = request_use_item_egg_incubator(api, account,
+                                                      incubator_id, egg_id)
+            result = response.get('result', -1)
+            if result == 1 and parse_egg_incubator(account, response):
+                message = (
+                    'Egg #{} ({:.1f} km) was put on incubator #{}.').format(
+                    egg_id, target_km, incubator_id)
+                log.info(message)
+                del account['eggs'][egg_id]
+            else:
+                message = ('Failed to put egg #{} ({:.1f} km) on ' +
+                           'incubator #{}: {}').format(
+                    egg_id, target_km, incubator_id, result)
+                log.error(message)
+                return False
+
+    return True
 
 
 def parse_caught_pokemon(response_dict, catch_id):
@@ -1029,6 +1071,35 @@ def request_release_pokemon(api, account, pokemon_id, release_ids=[]):
 
     except Exception as e:
         log.error('Exception while releasing Pokemon: %s', repr(e))
+
+    return False
+
+
+# https://docs.pogodev.org/api/messages/UseItemEggIncubatorProto/
+# https://docs.pogodev.org/api/messages/UseItemEggIncubatorOutProto/
+def request_use_item_egg_incubator(api, account, incubator_id, egg_id):
+    item_id = 'EggIncubatorProto-{}'.format(incubator_id)
+    try:
+        req = api.create_request()
+        res = req.use_item_egg_incubator(
+            item_id=item_id,
+            pokemon_id=egg_id
+        )
+        req.check_challenge()
+        req.get_hatched_eggs()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
+        req.check_awarded_badges()
+        # req.download_settings()
+        req.get_buddy_walked()
+        res = req.call()
+
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(res)
+        result = res['responses']['USE_ITEM_EGG_INCUBATOR']
+
+        return result
+
+    except Exception as e:
+        log.warning('Exception while putting an egg in incubator: %s', repr(e))
 
     return False
 
