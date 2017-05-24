@@ -482,29 +482,32 @@ def parse_egg_incubator(account, response_dict):
 
 
 def incubate_eggs(api, account):
-    for incubator_id, incubator in account['incubators'].iteritems():
+    incubators = dict(account['incubators'])
+    for incubator_id, incubator in incubators.iteritems():
         if incubator['pokemon_id'] == 0:
-            item_id = incubator['item_id']
-            egg_id = random.choice(account['eggs'].keys())
-            target_km = account['eggs'][egg_id]['egg_km_walked_target']
+            try:
+                egg_id = random.choice(account['eggs'].keys())
+                target_km = account['eggs'][egg_id]['egg_km_walked_target']
 
-            time.sleep(random.uniform(2.0, 3.0))
-            response = request_use_item_egg_incubator(api, account,
-                                                      incubator_id, egg_id)
-            result = response.get('result', -1)
-            if result == 1 and parse_egg_incubator(account, response):
-                message = (
-                    'Egg #{} ({:.1f} km) was put on incubator {} #{}.').format(
-                    egg_id, target_km, item_id, incubator_id)
-                log.info(message)
-                del account['eggs'][egg_id]
-            else:
-                message = ('Failed to put egg #{} ({:.1f} km) on ' +
-                           'incubator #{}: {}').format(
-                    egg_id, target_km, incubator_id, result)
-                log.error(message)
-                return False
-
+                time.sleep(random.uniform(2.0, 4.0))
+                response = request_use_item_egg_incubator(api, account,
+                                                          incubator_id, egg_id)
+                result = response.get('result', -1)
+                if result == 1 and parse_egg_incubator(account, response):
+                    message = (
+                        'Egg #{} ({:.1f} km) is on incubator #{}.').format(
+                        egg_id, target_km, incubator_id)
+                    log.info(message)
+                    del account['eggs'][egg_id]
+                else:
+                    message = ('Failed to put egg #{} ({:.1f} km) on ' +
+                               'incubator #{}. Result code: {}').format(
+                        egg_id, target_km, incubator_id, result)
+                    log.error(message)
+                    return False
+            except IndexError:
+                log.debug('Account %s has no eggs to incubate.')
+                break
     return True
 
 
