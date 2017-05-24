@@ -429,6 +429,9 @@ def parse_account_stats(args, api, response_dict, account):
                 }
             elif p_id and is_egg:
                 parsed_eggs += 1
+                if p_data.get('egg_incubator_id', None):
+                    # Egg is already in incubator.
+                    continue
                 account['eggs'][p_id] = {
                     'captured_cell_id': p_data['captured_cell_id'],
                     'creation_time_ms': p_data['creation_time_ms'],
