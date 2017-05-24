@@ -47,7 +47,7 @@ from .models import (parse_map, GymDetails, parse_gyms, MainWorker,
 from .utils import now, clear_dict_response, parse_new_timestamp_ms
 from .transform import get_new_coords, jitter_location
 from .account import (setup_api, check_login, reset_account,
-                      parse_account_stats, AccountSet)
+                      cleanup_account_stats, parse_account_stats, AccountSet)
 from .captcha import captcha_overseer_thread, handle_captcha
 from .proxy import get_new_proxy
 from .schedulers import KeyScheduler, SchedulerFactory
@@ -1121,6 +1121,9 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
 
                     # Parse player data from response into the account.
                     parse_account_stats(args, api, response_dict, account)
+
+                    # Perform player data cleanup and update statistics.
+                    cleanup_account_stats(account, args.pokestop_refresh_time)
 
                     parsed = parse_map(args, response_dict, step_location, dbq,
                                        whq, api, status, scan_date, account,

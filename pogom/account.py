@@ -374,8 +374,7 @@ def cleanup_account_stats(account, pokestop_timeout):
     account['used_pokestops'] = used_pokestops
 
 
-# Parse player stats and inventory into account dictionary.
-# Manage account statistics and does regular cleanup.
+# Parse player stats and inventory into account.
 def parse_account_stats(args, api, response_dict, account):
     # Check if account is banned.
     status_code = response_dict.get('status_code', -1)
@@ -383,9 +382,6 @@ def parse_account_stats(args, api, response_dict, account):
         account['banned'] = True
         log.warning('Account %s is probably banned.', account['username'])
 
-    cleanup_account_stats(account, args.pokestop_refresh_time)
-
-    # Parse inventory for Items, Pokemons and Eggs.
     inventory_items = response_dict['responses'].get(
         'GET_INVENTORY', {}).get(
         'inventory_delta', {}).get(
