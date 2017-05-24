@@ -456,45 +456,15 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     to prevent accounts from being cycled through too quickly.
     '''
     for i, account in enumerate(args.accounts):
-        account['warning'] = None
-        account['banned'] = False
-        account['tutorials'] = []
-        account['max_items'] = 350
-        account['max_pokemons'] = 250
-        account['items'] = {}
-        account['pokemons'] = {}
-        account['incubators'] = {}
-        account['eggs'] = {}
-        account['level'] = 0
-        account['experience'] = 0
-        account['encounters'] = 0
-        account['throws'] = 0
-        account['catches'] = 0
-        account['spins'] = 0
-        account['walked'] = 0.0
         reset_account(account)
-        '''
-        Handled by reset_account() when new account is fetched:
-        account['first_login'] = True
-        account['start_time'] = now()
-        account['last_active'] = None
-        account['last_location'] = None
-        account['used_pokestops'] = {}
-        account['session_experience'] = 0
-        account['session_throws'] = 0
-        account['session_captures'] = 0
-        account['session_spins'] = 0
-        account['hour_experience'] = 0
-        account['hour_throws'] = 0
-        account['hour_catches'] = 0
-        account['hour_spins'] = 0
-        '''
         account_queue.put(account)
 
     '''
     Create sets of special case accounts.
     Currently limited to L30+ IV/CP scanning.
     '''
+    for i, account in enumerate(args.accounts_L30):
+        reset_account(account)
     account_sets.create_set('30', args.accounts_L30)
 
     # Debug.

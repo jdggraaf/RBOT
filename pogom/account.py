@@ -334,9 +334,26 @@ def complete_tutorial(api, account):
 def reset_account(account):
     account['first_login'] = True
     account['start_time'] = time.time()
+    account['last_timestamp_ms'] = int(time.time())
     account['last_active'] = None
     account['last_location'] = None
+    account['warning'] = None
+    account['banned'] = False
+    account['tutorials'] = []
+    account['max_items'] = 350
+    account['max_pokemons'] = 250
+    account['items'] = {}
+    account['pokemons'] = {}
+    account['incubators'] = {}
+    account['eggs'] = {}
     account['used_pokestops'] = {}
+    account['level'] = 0
+    account['experience'] = 0
+    account['encounters'] = 0
+    account['throws'] = 0
+    account['catches'] = 0
+    account['spins'] = 0
+    account['walked'] = 0.0
     account['session_experience'] = 0
     account['session_throws'] = 0
     account['session_catches'] = 0

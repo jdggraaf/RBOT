@@ -651,8 +651,7 @@ def get_args():
         for i, username in enumerate(args.username):
             args.accounts.append({'username': username,
                                   'password': args.password[i],
-                                  'auth_service': args.auth_service[i],
-                                  'last_timestamp_ms': now()})
+                                  'auth_service': args.auth_service[i]})
 
         # Make max workers equal number of accounts if unspecified, and disable
         # account switching.
@@ -730,8 +729,7 @@ def get_args():
                         'auth_service': service,
                         'username': username,
                         'password': password,
-                        'captcha': False,
-                        'last_timestamp_ms': now()
+                        'captcha': False
                     })
 
         # Decide which scanning mode to use.
