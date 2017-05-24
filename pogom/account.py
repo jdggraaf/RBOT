@@ -803,7 +803,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
                 account['pokemons'][catch_id] = caught_pokemon
                 # Don't release all Pokemon.
                 if iv > 93 and random.random() < 0.75:
-                    log.info('Kept Pokemon #%d (IV %d%) in inventory (%d/%d).',
+                    log.info('Kept Pokemon #%d (IV %d) in inventory (%d/%d).',
                              pokemon_id, iv,
                              len(account['pokemons']), account['max_pokemons'])
                     return caught_pokemon
