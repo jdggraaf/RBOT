@@ -102,7 +102,7 @@ def switch_status_printer(display_type, current_page, mainlog,
 # Thread to print out the status of each worker.
 def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                    wh_queue, account_queue, account_failures, account_captchas,
-                   logmode, hash_key, key_scheduler):
+                   accounts_L30, logmode, hash_key, key_scheduler):
 
     if (logmode == 'logs'):
         display_type = ['logs']
@@ -286,6 +286,8 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
                     accounts.append(('Active', account))
             for account in list(account_queue.queue):
                 accounts.append(('Free', account))
+            for acc_lvl30 in accounts_L30:
+                accounts.append(('Lvl-30', acc_lvl30))
             for captcha_tuple in list(account_captchas):
                 account = captcha_tuple[1]
                 accounts.append(('Captcha', account))
@@ -502,7 +504,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
                    name='status_printer',
                    args=(threadStatus, search_items_queue_array,
                          db_updates_queue, wh_queue, account_queue,
-                         account_failures, account_captchas,
+                         account_failures, account_captchas, args.accounts_L30,
                          args.print_status, args.hash_key,
                          key_scheduler))
         t.daemon = True
