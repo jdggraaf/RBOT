@@ -680,7 +680,7 @@ def select_berry(account, berry=0.25):
 # normalized_reticle_size=1.950
 # normalized_hit_position=1.0
 # spin_modifier=1.0
-def randomize_throw(excellent=0.20, great=0.5, nice=0.2, curveball=0.8):
+def randomize_throw(excellent=0.05, great=0.5, nice=0.3, curveball=0.8):
     random_throw = random.random()
     great += excellent
     nice += great
@@ -710,6 +710,11 @@ def randomize_throw(excellent=0.20, great=0.5, nice=0.2, curveball=0.8):
     else:
         throw['name'] += ' Curveball'
         throw['spin_modifier'] = 0.55 + 0.45 * random.random()
+
+    if random.random() < 0.94:
+        throw['hit_pokemon'] = 1
+    else:
+        throw['hit_pokemon'] = 0
 
     return throw
 
@@ -802,7 +807,9 @@ def catch_pokemon(status, api, account, pokemon, iv):
                 # Add Pokemon to account inventory.
                 account['pokemons'][catch_id] = caught_pokemon
                 # Don't release all Pokemon.
-                if iv > 93 and random.random() < 0.75:
+                keep_pokemon = random.random()
+                if (iv > 80 and keep_pokemon < 0.60) or (
+                        iv > 91 and keep_pokemon < 0.95):
                     log.info('Kept Pokemon #%d (IV %d) in inventory (%d/%d).',
                              pokemon_id, iv,
                              len(account['pokemons']), account['max_pokemons'])
@@ -1024,7 +1031,7 @@ def request_catch_pokemon(api, account, encounter_id, spawnpoint_id, throw,
             pokeball=ball_id,
             normalized_reticle_size=throw['reticle_size'],
             spawn_point_id=spawnpoint_id,
-            hit_pokemon=1,
+            hit_pokemon=throw['hit_pokemon'],
             spin_modifier=throw['spin_modifier'],
             normalized_hit_position=throw['hit_position'])
         req.check_challenge()
