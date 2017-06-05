@@ -13,7 +13,8 @@ import socket
 import struct
 import zipfile
 import requests
-from uuid import uuid4
+import hashlib
+
 from s2sphere import CellId, LatLng
 
 from . import config
@@ -889,6 +890,8 @@ IPHONES = {'iPhone5,1': 'N41AP',
 
 def generate_device_info(username):
     pick_hash = hash(username)
+    md5 = hashlib.md5()
+    md5.update(username)
 
     device_info = {'device_brand': 'Apple', 'device_model': 'iPhone',
                    'hardware_manufacturer': 'Apple',
@@ -904,7 +907,7 @@ def generate_device_info(username):
     device_pick = devices[pick_hash % len(devices)]
     device_info['device_model_boot'] = device_pick
     device_info['hardware_model'] = IPHONES[device_pick]
-    device_info['device_id'] = uuid4().hex
+    device_info['device_id'] = md5.hexdigest()
 
     if device_pick in ('iPhone9,1', 'iPhone9,2', 'iPhone9,3', 'iPhone9,4'):
         ios_pool = ios10
@@ -914,7 +917,6 @@ def generate_device_info(username):
         ios_pool = ios8 + ios9 + ios10
 
     device_info['firmware_type'] = ios_pool[pick_hash % len(ios_pool)]
-    log.debug('Device Info for account %s: %s', username, device_info)
     return device_info
 
 
