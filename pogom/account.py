@@ -522,7 +522,8 @@ def incubate_eggs(api, account):
                     log.error(message)
                     return False
             except IndexError:
-                log.debug('Account %s has no eggs to incubate.')
+                log.debug('Account %s has no eggs to incubate.',
+                          account['username'])
                 break
     return True
 
