@@ -27,7 +27,10 @@ def setup_api(args, status):
     if args.mock != '':
         api = FakePogoApi(args.mock)
     else:
-        device_info = generate_device_info(status['username'])
+        identifier = status['username']
+        if args.hashing_salt:
+            identifier += args.hashing_salt
+        device_info = generate_device_info(identifier)
         api = PGoApi(device_info=device_info)
 
     # New account - new proxy.
