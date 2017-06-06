@@ -427,9 +427,6 @@ def get_args():
                         help=('Enables the use of X-FORWARDED-FOR headers ' +
                               'to identify the IP of clients connecting ' +
                               'through these trusted proxies.'))
-    parser.add_argument('-hs', '--hashing-salt', default='r0ck3tm4p',
-                        help=('Random text used to introduce variance when ' +
-                              'generating device information for accounts.'))
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument('-v', '--verbose',
                            help=('Show debug messages from RocketMap ' +
@@ -892,9 +889,9 @@ IPHONES = {'iPhone5,1': 'N41AP',
 
 
 def generate_device_info(identifier):
-    pick_hash = hash(identifier)
     md5 = hashlib.md5()
     md5.update(identifier)
+    pick_hash = int(md5.hexdigest(), 16)
 
     device_info = {'device_brand': 'Apple', 'device_model': 'iPhone',
                    'hardware_manufacturer': 'Apple',

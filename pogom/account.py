@@ -22,14 +22,12 @@ class TooManyLoginAttempts(Exception):
 
 
 # Create the API object that'll be used to scan.
-def setup_api(args, status):
+def setup_api(args, status, account):
     # Create the API instance this will use.
     if args.mock != '':
         api = FakePogoApi(args.mock)
     else:
-        identifier = status['username']
-        if args.hashing_salt:
-            identifier += args.hashing_salt
+        identifier = account['username'] + account['password']
         device_info = generate_device_info(identifier)
         api = PGoApi(device_info=device_info)
 
