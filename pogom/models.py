@@ -2034,7 +2034,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         if len(captcha_url) > 1 and (not args.captcha_solving
                                                      and not args.captcha_key):
                             # Flag account.
-                            hlvl_account['captcha'] = True
+                            hlvl_account['failed'] = True
                             status['message'] = (
                                 'Level 30 account {} encountered a captcha. ' +
                                 'Account will not be used.').format(
@@ -2049,15 +2049,21 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                               'captcha': status['captcha'],
                                               'time': 0}
                                 wh_update_queue.put(('captcha', wh_message))
-                        elif automatic_captcha_solve(
+                        elif len(captcha_url) > 1 and automatic_captcha_solve(
                                 args, status, api, captcha_url, account,
                                 wh_update_queue):
-
+                            # Retry Encounter Pokémon request.
+                            encounter_result = encounter_pokemon_request(
+                                hlvl_api,
+                                p['encounter_id'],
+                                p['spawn_point_id'],
+                                scan_location)
                             status_code = responses['ENCOUNTER'].get(
                                             'status', 0)
+
                             if status_code == 8:
-                                # Temporary mark.
-                                hlvl_account['captcha'] = True
+                                # Flag account.
+                                hlvl_account['failed'] = True
                                 log.error('Account %s has failed a encounter.'
                                           + ' Received Anti-Cheat response ('
                                           + 'a "%s" status response).',
@@ -2145,7 +2151,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 # Only add CP if we're level 30+.
                 if encounter_level >= 30:
                     pokemon[p['encounter_id']]['cp'] = cp
-
             # Try to capture wild Pokemon.
             catch_enabled = account['level'] < args.account_max_level and (
                             pokemons_caught < 3)

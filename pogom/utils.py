@@ -648,6 +648,39 @@ def get_args():
                                   'password': args.password[i],
                                   'auth_service': args.auth_service[i]})
 
+        # Prepare the L30 accounts for the account sets.
+        args.accounts_L30 = []
+
+        if args.high_lvl_accounts:
+            # Context processor.
+            with open(args.high_lvl_accounts, 'r') as accs:
+                for line in accs:
+                    # Make sure it's not an empty line.
+                    if not line.strip():
+                        continue
+
+                    line = line.split(',')
+
+                    # We need "service, user, pass".
+                    if len(line) < 3:
+                        raise Exception('L30 account is missing a'
+                                        + ' field. Each line requires: '
+                                        + '"service,user,pass".')
+
+                    # Let's remove trailing whitespace.
+                    service = line[0].strip()
+                    username = line[1].strip()
+                    password = line[2].strip()
+
+                    hlvl_account = {
+                        'auth_service': service,
+                        'username': username,
+                        'password': password,
+                        'failed': False
+                    }
+
+                    args.accounts_L30.append(hlvl_account)
+
         # Make max workers equal number of accounts if unspecified, and disable
         # account switching.
         if args.workers is None:
@@ -695,37 +728,6 @@ def get_args():
                 [int(i) for i in args.webhook_blacklist])
             args.webhook_whitelist = frozenset(
                 [int(i) for i in args.webhook_whitelist])
-
-        # Prepare the L30 accounts for the account sets.
-        args.accounts_L30 = []
-
-        if args.high_lvl_accounts:
-            # Context processor.
-            with open(args.high_lvl_accounts, 'r') as accs:
-                for line in accs:
-                    # Make sure it's not an empty line.
-                    if not line.strip():
-                        continue
-
-                    line = line.split(',')
-
-                    # We need "service, user, pass".
-                    if len(line) < 3:
-                        raise Exception('L30 account is missing a'
-                                        + ' field. Each line requires: '
-                                        + '"service,user,pass".')
-
-                    # Let's remove trailing whitespace.
-                    service = line[0].strip()
-                    username = line[1].strip()
-                    password = line[2].strip()
-
-                    args.accounts_L30.append({
-                        'auth_service': service,
-                        'username': username,
-                        'password': password,
-                        'captcha': False
-                    })
 
         # Decide which scanning mode to use.
         if args.spawnpoint_scanning:

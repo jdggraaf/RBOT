@@ -364,6 +364,7 @@ def reset_account(account):
     account['download_settings'] = ''
     account['last_active'] = None
     account['last_location'] = None
+    account['failed'] = False
     account['warning'] = None
     account['banned'] = False
     account['tutorials'] = []
@@ -1254,8 +1255,8 @@ class AccountSet(object):
                 if account.get('in_use', False):
                     continue
 
-                # Make sure it's not captcha'd.
-                if account.get('captcha', False):
+                # Make sure the account hasn't failed.
+                if account.get('failed', False):
                     continue
 
                 # Check if we're below speed limit for account.
