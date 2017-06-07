@@ -2202,20 +2202,22 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                 # Update Pokemon information.
                                 pokemon[p['encounter_id']].update({
                                     'pokemon_id': c_pokemon['pokemon_id'],
-                                    'individual_attack': iv_attack,
-                                    'individual_defense': iv_defense,
-                                    'individual_stamina': iv_stamina,
                                     'move_1': c_pokemon['move_1'],
                                     'move_2': c_pokemon['move_2'],
                                     'height': c_pokemon['height'],
                                     'weight': c_pokemon['weight'],
-                                    'gender': c_pokemon['gender'],
-                                    'cp_multiplier': c_pokemon['cp_multiplier']
+                                    'gender': c_pokemon['gender']
                                 })
-                                # Only add CP if we're level 30+.
-                                encounter_level = account['level']
-                                if encounter_level >= 30:
-                                    pokemon[p['encounter_id']]['cp'] = cp
+                                # Only add IVs and CP if we're level 30+.
+                                if account['level'] >= 30:
+                                    pokemon[p['encounter_id']].update({
+                                        'individual_attack': iv_attack,
+                                        'individual_defense': iv_defense,
+                                        'individual_stamina': iv_stamina,
+                                        'cp': c_pokemon['cp'],
+                                        'cp_multiplier':
+                                            c_pokemon['cp_multiplier']
+                                    })
                 except Exception as e:
                     log.warning('Exception capturing Pokemon: %s', repr(e))
 
