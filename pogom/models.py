@@ -2025,7 +2025,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         if len(captcha_url) > 1 and (not args.captcha_solving
                                                      and not args.captcha_key):
                             # Flag account.
-                            hlvl_account['captcha'] = True
+                            hlvl_account['failed'] = True
                             status['message'] = (
                                 'Level 30 account {} encountered a captcha. ' +
                                 'Account will not be used.').format(
@@ -2053,8 +2053,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                             'status', 0)
 
                             if status_code == 8:
-                                # Temporary mark.
-                                hlvl_account['captcha'] = True
+                                # Flag account.
+                                hlvl_account['failed'] = True
                                 log.error('Account %s has failed a encounter.'
                                           + ' Received Anti-Cheat response ('
                                           + 'a "%s" status response).',
