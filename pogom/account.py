@@ -754,6 +754,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
 
     # Try to catch Pokemon, but don't get stuck.
     attempts = 1
+    used_berry = False
     while attempts < 4:
         # Select Pokeball type to throw.
         ball = select_pokeball(account)
@@ -763,31 +764,32 @@ def catch_pokemon(status, api, account, pokemon, iv):
             log.warning(status['message'])
             return False
 
-        # Select a Berry type to use.
-        berry = select_berry(account, 1)
-        if not berry:
-            status['message'] = 'Account {} has no berries to use.'.format(
-                account['username'])
-            log.info(status['message'])
-        else:
-            status['message'] = (
-                'Using a {} to catch Pokemon #{} - attempt {}.').format(
-                    berry['name'], pokemon_id, attempts)
-            log.info(status['message'])
-
-            time.sleep(random.uniform(2, 4))
-            if request_use_item_encounter(api, account, encounter_id,
-                                          spawnpoint_id, berry['id']):
-                account['items'][berry['id']] -= 1
-                status['message'] = (
-                    'Used a {} in encounter #{} - attempt {}.').format(
-                        berry['name'], encounter_id, attempts)
-                log.debug(status['message'])
+        if not used_berry:
+            # Select a Berry type to use.
+            berry = select_berry(account)
+            if not berry:
+                status['message'] = 'Account {} has no berries to use.'.format(
+                    account['username'])
+                log.info(status['message'])
             else:
                 status['message'] = (
-                    'Unable to use {} in encounter #{} - attempt {}.').format(
-                        berry['name'], encounter_id, attempts)
-                log.error(status['message'])
+                    'Using a {} to catch Pokemon #{} - attempt {}.').format(
+                        berry['name'], pokemon_id, attempts)
+                log.info(status['message'])
+
+                time.sleep(random.uniform(2, 4))
+                if request_use_item_encounter(api, account, encounter_id,
+                                              spawnpoint_id, berry['id']):
+                    account['items'][berry['id']] -= 1
+                    status['message'] = (
+                        'Used a {} in encounter #{}.').format(
+                            berry['name'], encounter_id)
+                    log.debug(status['message'])
+                else:
+                    status['message'] = (
+                        'Unable to use {} in encounter #{}.').format(
+                            berry['name'], encounter_id)
+                    log.error(status['message'])
 
         # Randomize throw.
         throw = randomize_throw()
@@ -851,6 +853,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
                     'Catch attempt {} failed. Pokemon #{} broke free.').format(
                         attempts, pokemon_id)
                 log.info(status['message'])
+                used_berry = False
             if catch_status == 3:
                 status['message'] = (
                     'Catch attempt {} failed. Pokemon #{} fled!').format(
@@ -862,6 +865,9 @@ def catch_pokemon(status, api, account, pokemon, iv):
                     'Catch attempt {} failed. Pokemon #{} dodged.').format(
                         attempts, pokemon_id)
                 log.info(status['message'])
+                if berry:
+                    # Prevent attempts to use a berry again if one still active
+                    used_berry = True
 
         attempts += 1
     return False
