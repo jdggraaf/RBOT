@@ -612,7 +612,7 @@ def handle_pokestop(status, api, account, pokestop):
         log.info(status['message'])
 
         time.sleep(random.uniform(2, 3))
-        fort_search = request_fort_search(api, pokestop, location)
+        fort_search = request_fort_search(api, account, pokestop, location)
 
         if fort_search:
             spin_result = fort_search.get('result', -1)
@@ -898,10 +898,10 @@ def recycle_pokemons(status, api, account, percentage=0.03):
 
 # https://docs.pogodev.org/api/messages/FortSearchProto/
 # https://docs.pogodev.org/api/messages/FortSearchOutProto
-def request_fort_search(api, pokestop, location):
+def request_fort_search(api, account, pokestop, location):
     try:
         req = api.create_request()
-        spin_pokestop_response = req.fort_search(
+        response = req.fort_search(
             fort_id=pokestop['id'],
             fort_latitude=pokestop['latitude'],
             fort_longitude=pokestop['longitude'],
@@ -909,13 +909,14 @@ def request_fort_search(api, pokestop, location):
             player_longitude=location[1])
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings()
+        # req.download_settings()
         req.get_buddy_walked()
-        spin_pokestop_response = req.call()
+        response = req.call()
 
-        return spin_pokestop_response['responses']['FORT_SEARCH']
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
+        return response['responses']['FORT_SEARCH']
 
     except Exception as e:
         log.error('Exception while spinning Pokestop: %s.', repr(e))
@@ -943,6 +944,7 @@ def encounter_pokemon_request(api, account, encounter_id, spawnpoint_id,
 
         account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
         return response
+
     except Exception as e:
         log.error('Exception while encountering Pokémon: %s.', repr(e))
 
