@@ -22,6 +22,10 @@ class TooManyLoginAttempts(Exception):
     pass
 
 
+class InvalidLogin(Exception):
+    pass
+
+
 # Create the API object that'll be used to scan.
 def setup_api(args, status, account):
     # Create the API instance this will use.
@@ -115,20 +119,23 @@ def check_login(args, account, api, position, proxy_url):
     except Exception as e:
         log.error('Login for account %s failed. Exception in call request: %s',
                   account['username'], repr(e))
+        raise InvalidLogin('Unable to make first empty request.')
 
     time.sleep(random.uniform(.6, 1.1))
     if get_player_state(api, account):
         if account['warning']:
             log.warning('Account %s has received a warning.',
                         account['username'])
-        app_version = '0.63.1'
-        uint_app_version = int(app_version.replace('.', '0'))
-
+        uint_app_version = int(args.api_version.replace('.', '0'))
         time.sleep(random.uniform(.5, 0.9))
         download_settings = request_download_remote_config_version(
             api, account, uint_app_version)
-
-        log.debug('download_settings = %s', download_settings)
+        if download_settings:
+            account['download_settings'] = download_settings
+            log.debug('Download settings for account %s: %s',
+                      account['username'], download_settings)
+        else:
+            raise InvalidLogin('Unable to retrieve download settings hash.')
 
         time.sleep(random.uniform(.6, 1.1))
         player_profile = request_get_player_profile(api, account)
@@ -145,7 +152,18 @@ def check_login(args, account, api, position, proxy_url):
             else:
                 log.debug('Account %s failed to collect level up rewards.',
                           account['username'])
-
+        '''
+        try:
+            # Make an empty request to retrieve store items.
+            time.sleep(random.uniform(.6, 1.1))
+            request = api.create_request()
+            request.get_store_items()
+            request.call()
+        except Exception as e:
+            log.error('Failed to get store items for account %s: %s',
+                      account['username'], repr(e))
+            raise InvalidLogin('Unable to request store items.')
+        '''
         # Check tutorial completion.
         if account['first_login']:
             account['first_login'] = False
@@ -285,9 +303,9 @@ def complete_tutorial(api, account):
         request = api.create_request()
         request.get_player(
             player_locale={
-                'country': 'GB',
+                'country': 'US',
                 'language': 'en',
-                'timezone': 'Europe/London'})
+                'timezone': 'America/Los_Angeles'})
         responses = request.call().get('responses', {})
 
         inventory = responses.get('GET_INVENTORY', {}).get(
@@ -314,9 +332,9 @@ def complete_tutorial(api, account):
         request = api.create_request()
         request.get_player(
             player_locale={
-                'country': 'GB',
+                'country': 'US',
                 'language': 'en',
-                'timezone': 'Europe/London'})
+                'timezone': 'America/Los_Angeles'})
         request.call()
 
     if 7 not in tutorial_state:
@@ -345,6 +363,7 @@ def reset_account(account):
     account['first_login'] = True
     account['start_time'] = time.time()
     account['last_timestamp_ms'] = int(time.time())
+    account['download_settings'] = ''
     account['last_active'] = None
     account['last_location'] = None
     account['warning'] = None
@@ -921,7 +940,7 @@ def request_fort_search(api, account, pokestop, location):
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        # req.download_settings()
+        req.download_settings(hash=account['download_settings'])
         req.get_buddy_walked()
         response = req.call()
 
@@ -948,7 +967,7 @@ def encounter_pokemon_request(api, account, encounter_id, spawnpoint_id,
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        # req.download_settings()
+        req.download_settings(hash=account['download_settings'])
         req.get_buddy_walked()
         response = req.call()
 
@@ -971,7 +990,7 @@ def request_recycle_item(api, account, item_id, amount):
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        # req.download_settings()
+        req.download_settings(hash=account['download_settings'])
         req.get_buddy_walked()
         response = req.call()
 
@@ -992,9 +1011,9 @@ def request_get_player_profile(api, account):
         req.get_player_profile()
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
+        req.get_inventory(last_timestamp_ms=int(time.time()))
         req.check_awarded_badges()
-        req.download_settings()
+        req.download_settings(hash=account['download_settings'])
         req.get_buddy_walked()
         response = req.call()
 
@@ -1009,20 +1028,13 @@ def request_get_player_profile(api, account):
 # https://docs.pogodev.org/api/messages/GetRemoteConfigVersionsProto/
 # https://docs.pogodev.org/api/messages/GetRemoteConfigVersionsOutProto/
 def request_download_remote_config_version(api, account, app_version):
-    '''
-    .POGOProtos.Enums.Platform platform = 1;
-    string device_manufacturer = 2;
-    string device_model = 3;
-    string locale = 4;
-    uint32 app_version = 5;
-    '''
     try:
         req = api.create_request()
         response = req.download_remote_config_version(
             platform=1,
-            device_manufacturer=account['device_info']['latitude'],
-            device_model=account['device_info']['longitude'],
-            locale='en_US',
+            # device_manufacturer=account['device_info']['device_brand'],
+            # device_model=account['device_info']['device_model'],
+            # locale='en_US',
             app_version=app_version)
         req.check_challenge()
         req.get_hatched_eggs()
@@ -1031,7 +1043,7 @@ def request_download_remote_config_version(api, account, app_version):
         req.download_settings()
         response = req.call()
 
-        return response
+        return response['responses']['DOWNLOAD_SETTINGS']['hash']
 
     except Exception as e:
         log.error('Exception while downloading app settings: %s.', repr(e))
@@ -1050,7 +1062,7 @@ def request_level_up_rewards(api, account):
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
         if account['first_login']:
-            req.download_settings()
+            req.download_settings(hash=account['download_settings'])
         req.get_buddy_walked()
         response = req.call()
 
@@ -1084,7 +1096,7 @@ def request_catch_pokemon(api, account, encounter_id, spawnpoint_id, throw,
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        # req.download_settings()
+        req.download_settings(hash=account['download_settings'])
         req.get_buddy_walked()
         response = req.call()
 
@@ -1111,7 +1123,7 @@ def request_use_item_encounter(api, account, encounter_id, spawnpoint_id,
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        # req.download_settings()
+        req.download_settings(hash=account['download_settings'])
         req.get_buddy_walked()
         res = req.call()
 
@@ -1140,7 +1152,7 @@ def request_release_pokemon(api, account, pokemon_id, release_ids=[]):
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        # req.download_settings()
+        req.download_settings(hash=account['download_settings'])
         req.get_buddy_walked()
         response = req.call()
 
@@ -1169,7 +1181,7 @@ def request_use_item_egg_incubator(api, account, incubator_id, egg_id):
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        # req.download_settings()
+        req.download_settings(hash=account['download_settings'])
         req.get_buddy_walked()
         res = req.call()
 
