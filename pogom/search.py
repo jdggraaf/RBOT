@@ -572,8 +572,9 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
 
         t = Thread(target=search_worker_thread,
                    name='search-worker-{}'.format(i),
-                   args=(args, account_queue, account_sets, account_failures,
-                         account_captchas, search_items_queue, pause_bit,
+                   args=(args, api_version, account_queue, account_sets,
+                         account_failures, account_captchas,
+                         search_items_queue, pause_bit,
                          threadStatus[workerId], db_updates_queue,
                          wh_queue, scheduler, key_scheduler))
         t.daemon = True
@@ -849,9 +850,10 @@ def generate_hive_locations(current_location, step_distance,
     return results
 
 
-def search_worker_thread(args, account_queue, account_sets, account_failures,
-                         account_captchas, search_items_queue, pause_bit,
-                         status, dbq, whq, scheduler, key_scheduler):
+def search_worker_thread(args, api_version, account_queue, account_sets,
+                         account_failures, account_captchas,
+                         search_items_queue, pause_bit, status, dbq, whq,
+                         scheduler, key_scheduler):
 
     log.debug('Search worker thread starting...')
 
@@ -1184,8 +1186,9 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                                     current_gym, len(gyms_to_update),
                                     step_location[0], step_location[1])
                             time.sleep(random.random() + 2)
+
                             response = gym_request(
-                                api, account, step_location, gym)
+                                api, account, step_location, gym, api_version)
 
                             # Make sure the gym was in range. (Sometimes the
                             # API gets cranky about gyms that are ALMOST 1km
@@ -1330,9 +1333,9 @@ def map_request(api, account, position, no_jitter=False):
         return False
 
 
-def gym_request(api, account, position, gym):
+def gym_request(api, account, position, gym, api_version):
     try:
-        log.debug('Getting details for gym @ %f/%f (%fkm away)',
+        log.debug('Getting details for gym @ %f/%f (%fkm away).',
                   gym['latitude'], gym['longitude'],
                   calc_distance(position, [gym['latitude'], gym['longitude']]))
         req = api.create_request()
@@ -1340,7 +1343,8 @@ def gym_request(api, account, position, gym):
                             player_latitude=f2i(position[0]),
                             player_longitude=f2i(position[1]),
                             gym_latitude=gym['latitude'],
-                            gym_longitude=gym['longitude'])
+                            gym_longitude=gym['longitude'],
+                            client_version=api_version)
         req.check_challenge()
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
@@ -1354,7 +1358,7 @@ def gym_request(api, account, position, gym):
         return response
 
     except Exception as e:
-        log.warning('Exception while downloading gym details: %s', repr(e))
+        log.warning('Exception while downloading gym details: %s.', repr(e))
         return False
 
 
