@@ -446,6 +446,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     threadStatus = {}
     key_scheduler = None
     api_version = '0.63.1'
+    args.api_version = '0.63.1'
     api_check_time = 0
     hashkeys_last_upsert = timeit.default_timer()
     hashkeys_upsert_min_delay = 5.0
@@ -1472,5 +1473,5 @@ def get_api_version(args):
 
         return r.text[2:] if r.status_code == requests.codes.ok else False
     except Exception as e:
-        log.warning('error on API check: %s', repr(e))
+        log.warning('Error on API check: %s', repr(e))
         return False
