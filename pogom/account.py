@@ -1010,26 +1010,6 @@ def request_recycle_item(api, account, item_id, amount):
     return False
 
 
-def request_get_player_profile(api, account):
-    try:
-        req = api.create_request()
-        req.get_player_profile()
-        req.check_challenge()
-        req.get_hatched_eggs()
-        req.get_inventory(last_timestamp_ms=int(time.time()))
-        req.check_awarded_badges()
-        req.download_settings(hash=account['download_settings'])
-        req.get_buddy_walked()
-        response = req.call()
-
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response
-    except Exception as e:
-        log.warning('Exception while requesting player profile: %s', repr(e))
-
-    return False
-
-
 # https://docs.pogodev.org/api/messages/GetRemoteConfigVersionsProto/
 # https://docs.pogodev.org/api/messages/GetRemoteConfigVersionsOutProto/
 def request_download_remote_config_version(api, account, app_version):
@@ -1048,10 +1028,31 @@ def request_download_remote_config_version(api, account, app_version):
         req.download_settings()
         response = req.call()
 
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
         return response['responses']['DOWNLOAD_SETTINGS']['hash']
 
     except Exception as e:
         log.error('Exception while downloading app settings: %s.', repr(e))
+
+    return False
+
+
+def request_get_player_profile(api, account):
+    try:
+        req = api.create_request()
+        req.get_player_profile()
+        req.check_challenge()
+        req.get_hatched_eggs()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
+        req.check_awarded_badges()
+        req.download_settings(hash=account['download_settings'])
+        req.get_buddy_walked()
+        response = req.call()
+
+        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
+        return response
+    except Exception as e:
+        log.warning('Exception while requesting player profile: %s', repr(e))
 
     return False
 
