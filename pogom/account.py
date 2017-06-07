@@ -30,6 +30,7 @@ def setup_api(args, status, account):
     else:
         identifier = account['username'] + account['password']
         device_info = generate_device_info(identifier)
+        account['device_info'] = device_info
         api = PGoApi(device_info=device_info)
 
     # New account - new proxy.
@@ -120,8 +121,16 @@ def check_login(args, account, api, position, proxy_url):
         if account['warning']:
             log.warning('Account %s has received a warning.',
                         account['username'])
+        app_version = '0.63.1'
+        uint_app_version = int(app_version.replace('.', '0'))
 
-        time.sleep(random.uniform(.7, 1.2))
+        time.sleep(random.uniform(.5, 0.9))
+        download_settings = request_download_remote_config_version(
+            api, account, uint_app_version)
+
+        log.debug('download_settings = %s', download_settings)
+
+        time.sleep(random.uniform(.6, 1.1))
         player_profile = request_get_player_profile(api, account)
         if not player_profile:
             log.warning('Failed to retrieve player profile from account %s.',
@@ -993,6 +1002,39 @@ def request_get_player_profile(api, account):
         return response
     except Exception as e:
         log.warning('Exception while requesting player profile: %s', repr(e))
+
+    return False
+
+
+# https://docs.pogodev.org/api/messages/GetRemoteConfigVersionsProto/
+# https://docs.pogodev.org/api/messages/GetRemoteConfigVersionsOutProto/
+def request_download_remote_config_version(api, account, app_version):
+    '''
+    .POGOProtos.Enums.Platform platform = 1;
+    string device_manufacturer = 2;
+    string device_model = 3;
+    string locale = 4;
+    uint32 app_version = 5;
+    '''
+    try:
+        req = api.create_request()
+        response = req.download_remote_config_version(
+            platform=1,
+            device_manufacturer=account['device_info']['latitude'],
+            device_model=account['device_info']['longitude'],
+            locale='en_US',
+            app_version=app_version)
+        req.check_challenge()
+        req.get_hatched_eggs()
+        req.get_inventory(last_timestamp_ms=0)
+        req.check_awarded_badges()
+        req.download_settings()
+        response = req.call()
+
+        return response
+
+    except Exception as e:
+        log.error('Exception while downloading app settings: %s.', repr(e))
 
     return False
 
