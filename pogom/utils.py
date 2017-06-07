@@ -168,10 +168,6 @@ def get_args():
     parser.add_argument('-ams', '--account-max-spins',
                         help='Maximum number of Pokestop spins per hour.',
                         type=int, default=80)
-    parser.add_argument('-ed', '--encounter-delay',
-                        help=('Time delay between encounter pokemon ' +
-                              'in scan threads.'),
-                        type=float, default=1)
     parser.add_argument('-nostore', '--no-api-store',
                         help=("Don't store the API objects used by the high"
                               + ' level accounts in memory. This will increase'
@@ -426,10 +422,6 @@ def get_args():
                         help='Set the status page password.')
     parser.add_argument('-hk', '--hash-key', default=None, action='append',
                         help='Key for hash server')
-    parser.add_argument('-tut', '--complete-tutorial', action='store_true',
-                        help=("Complete ToS and tutorial steps on accounts " +
-                              "if they haven't already."),
-                        default=False)
     parser.add_argument('-novc', '--no-version-check', action='store_true',
                         help='Disable API version check.',
                         default=False)

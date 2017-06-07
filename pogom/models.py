@@ -10,6 +10,7 @@ import gc
 import time
 import geopy
 import math
+import random
 from peewee import (InsertQuery, Check, CompositeKey, ForeignKeyField,
                     SmallIntegerField, IntegerField, CharField, DoubleField,
                     BooleanField, DateTimeField, fn, DeleteQuery, FloatField,
@@ -1945,7 +1946,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
             encounter_result = None
             using_accountset = False
             if args.encounter and (pokemon_id in args.encounter_whitelist):
-                time.sleep(args.encounter_delay)
+                time.sleep(random.uniform(1.0, 2.5))
 
                 hlvl_account = None
                 hlvl_api = None
@@ -2151,7 +2152,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
             if catch_enabled and pokemon_id in args.pokemon_catch_list:
 
                 if using_accountset or encounter_result is None:
-                    time.sleep(args.encounter_delay)
+                    time.sleep(random.uniform(1.0, 2.5))
                     # Encounter Pokemon.
                     encounter_result = encounter_pokemon_request(
                         api,

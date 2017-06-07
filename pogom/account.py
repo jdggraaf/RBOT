@@ -150,8 +150,8 @@ def check_login(args, account, api, position, proxy_url):
                 log.debug('Account %s collected its level up rewards.',
                           account['username'])
             else:
-                log.debug('Account %s failed to collect level up rewards.',
-                          account['username'])
+                log.warning('Account %s failed to collect level up rewards.',
+                            account['username'])
         '''
         try:
             # Make an empty request to retrieve store items.
@@ -167,15 +167,13 @@ def check_login(args, account, api, position, proxy_url):
         # Check tutorial completion.
         if account['first_login']:
             account['first_login'] = False
-            if args.complete_tutorial:
-                if not all(x in account['tutorials']
-                           for x in (0, 1, 3, 4, 7)):
-                    log.info('Completing tutorial steps for %s.',
-                             account['username'])
-                    complete_tutorial(api, account)
-                else:
-                    log.info('Account %s has already completed ' +
-                             'the tutorial.', account['username'])
+            if not all(x in account['tutorials'] for x in (0, 1, 3, 4, 7)):
+                log.info('Completing tutorial steps for %s.',
+                         account['username'])
+                complete_tutorial(api, account)
+            else:
+                log.info('Account %s has already completed ' +
+                         'the tutorial.', account['username'])
 
     incubate_eggs(api, account)
 
@@ -838,7 +836,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
                 account['pokemons'][catch_id] = caught_pokemon
                 # Don't release all Pokemon.
                 keep_pokemon = random.random()
-                if (iv > 80 and keep_pokemon < 0.60) or (
+                if (iv > 80 and keep_pokemon < 0.65) or (
                         iv > 91 and keep_pokemon < 0.95):
                     log.info('Kept Pokemon #%d (IV %d) in inventory (%d/%d).',
                              pokemon_id, iv,
