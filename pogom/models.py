@@ -33,8 +33,8 @@ from .utils import (get_pokemon_name, get_pokemon_rarity, get_pokemon_types,
                     get_move_type, clear_dict_response, calc_pokemon_level)
 from .transform import transform_from_wgs_to_gcj, get_new_coords
 from .customLog import printPokemon
-from .account import (setup_api, check_login, catch_pokemon,
-                      encounter_pokemon_request, handle_pokestop)
+from .account import (setup_api, check_login, request_encounter,
+                      catch_pokemon, handle_pokestop)
 from .captcha import automatic_captcha_solve
 
 log = logging.getLogger(__name__)
@@ -2014,7 +2014,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                         + str(encounter_level) + '.')
 
                     # Encounter Pokemon.
-                    encounter_result = encounter_pokemon_request(
+                    encounter_result = request_encounter(
                         hlvl_api,
                         hlvl_account,
                         p['encounter_id'],
@@ -2023,7 +2023,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
                     # Handle errors.
                     if encounter_result:
-                        # Readability.
                         responses = encounter_result['responses']
 
                         # Check for captcha.
@@ -2052,29 +2051,29 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         elif len(captcha_url) > 1 and automatic_captcha_solve(
                                 args, status, api, captcha_url, account,
                                 wh_update_queue):
-                            # Retry Encounter Pokémon request.
-                            encounter_result = encounter_pokemon_request(
+                            # Retry encounter request.
+                            encounter_result = request_encounter(
                                 hlvl_api,
                                 p['encounter_id'],
                                 p['spawn_point_id'],
                                 scan_location)
-                            status_code = responses['ENCOUNTER'].get(
-                                            'status', 0)
+                            responses = encounter_result['responses']
 
-                            if status_code == 8:
-                                # Flag account.
-                                hlvl_account['failed'] = True
-                                log.error('Account %s has failed a encounter.'
-                                          + ' Received Anti-Cheat response ('
-                                          + 'a "%s" status response).',
-                                          hlvl_account['username'],
-                                          status_code)
+                        status_code = responses['ENCOUNTER'].get('status', 0)
+                        if status_code == 8:
+                            # Flag account.
+                            hlvl_account['failed'] = True
+                            log.error('Account %s has failed a encounter.'
+                                      + ' Received Anti-Cheat response ('
+                                      + 'a "%s" status response).',
+                                      hlvl_account['username'],
+                                      status_code)
 
-                            if status_code != 1:
-                                log.error('Account %s has failed a encounter.'
-                                          + ' Got a "%s" status response.',
-                                          hlvl_account['username'],
-                                          status_code)
+                        if status_code != 1:
+                            log.error('Account %s has failed a encounter.'
+                                      + ' Received a "%s" status response.',
+                                      hlvl_account['username'],
+                                      status_code)
 
                         # Clear the response for memory management.
                         encounter_result = clear_dict_response(
@@ -2159,7 +2158,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 if using_accountset or encounter_result is None:
                     time.sleep(random.uniform(1.0, 2.5))
                     # Encounter Pokemon.
-                    encounter_result = encounter_pokemon_request(
+                    encounter_result = request_encounter(
                         api,
                         account,
                         p['encounter_id'],
@@ -2264,6 +2263,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
         for f in forts:
             if config['parse_pokestops'] and f.get('type') == 1:  # Pokestops.
+                # TODO: filter pokestops < 300m - adjust delay - visit [2-3]
                 # Try to spin any pokestops within maximum range (38 meters).
                 if account['level'] < args.account_max_level:
                     if account['hour_spins'] < args.account_max_spins:
