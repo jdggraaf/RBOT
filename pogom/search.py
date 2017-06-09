@@ -47,7 +47,7 @@ from .models import (parse_map, GymDetails, parse_gyms, MainWorker,
 from .utils import now, clear_dict_response, parse_new_timestamp_ms
 from .transform import get_new_coords, jitter_location
 from .account import (setup_api, check_login, reset_account,
-                      cleanup_account_stats, parse_account_stats, AccountSet)
+                      cleanup_account_stats, AccountSet)
 from .captcha import captcha_overseer_thread, handle_captcha
 from .proxy import get_new_proxy
 from .schedulers import KeyScheduler, SchedulerFactory
@@ -128,23 +128,20 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
             # In log display mode, we don't want to show anything.
             continue
 
+        # Get the terminal size.
+        width, height = terminalsize.get_terminal_size()
+        # Available lines to print item list.
+        usable_height = height - 6
+        # Prevent division by zero.
+        if usable_height < 1:
+            usable_height = 1
+
         # Create a list to hold all the status lines, so they can be printed
         # all at once to reduce flicker.
         status_text = []
 
         if display_type[0] == 'workers':
-
-            # Get the terminal size.
-            width, height = terminalsize.get_terminal_size()
-            # Queue and overseer take 2 lines.  Switch message takes up 2
-            # lines.  Remove an extra 2 for things like screen status lines.
-            usable_height = height - 6
-            # Prevent people running terminals only 6 lines high from getting a
-            # divide by zero.
-            if usable_height < 1:
-                usable_height = 1
-
-            # Print the queue length.
+            # Print search items queue information.
             search_items_queue_size = 0
             for i in range(0, len(search_items_queue_array)):
                 search_items_queue_size += search_items_queue_array[i].qsize()
@@ -240,7 +237,28 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
             status = '{:' + str(userlen) + '} | {:10} | {:20}'
             status_text.append(status.format('User', 'Hold Time', 'Reason'))
 
+            total_pages = math.ceil(
+                            len(account_failures) / float(usable_height))
+
+            # Prevent moving outside the valid range of pages.
+            if current_page[0] > total_pages:
+                current_page[0] = total_pages
+            if current_page[0] < 1:
+                current_page[0] = 1
+
+            # Calculate which lines to print (1-based).
+            start_line = usable_height * (current_page[0] - 1) + 1
+            end_line = start_line + usable_height - 1
+
+            # Print account statistics.
+            current_line = 0
             for account in account_failures:
+                # Skip over items that don't belong on this page.
+                current_line += 1
+                if current_line < start_line:
+                    continue
+                if current_line > end_line:
+                    break
                 status_text.append(status.format(
                     account['account']['username'],
                     time.strftime('%H:%M:%S',
@@ -257,8 +275,29 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
             status = '{:21} | {:9} | {:9} | {:9}'
             status_text.append(status.format('Key', 'Remaining', 'Maximum',
                                              'Peak'))
+
             if hash_key is not None:
+                total_pages = math.ceil(len(hash_key) / float(usable_height))
+
+                # Prevent moving outside the valid range of pages.
+                if current_page[0] > total_pages:
+                    current_page[0] = total_pages
+                if current_page[0] < 1:
+                    current_page[0] = 1
+
+                # Calculate which lines to print (1-based).
+                start_line = usable_height * (current_page[0] - 1) + 1
+                end_line = start_line + usable_height - 1
+
+                # Print account statistics.
+                current_line = 0
                 for key in hash_key:
+                    # Skip over items that don't belong on this page.
+                    current_line += 1
+                    if current_line < start_line:
+                        continue
+                    if current_line > end_line:
+                        break
                     key_instance = key_scheduler.keys[key]
                     key_text = key
 
@@ -1062,6 +1101,9 @@ def search_worker_thread(args, account_queue, account_sets,
                 status['longitude'] = step_location[1]
                 dbq.put((WorkerStatus, {0: WorkerStatus.db_format(status)}))
 
+                # Perform account data cleanup and update statistics.
+                cleanup_account_stats(account, args.pokestop_refresh_time)
+
                 # Account information - used in captchas and account functions.
                 account['last_active'] = datetime.utcnow()
                 account['last_location'] = step_location
@@ -1092,12 +1134,6 @@ def search_worker_thread(args, account_queue, account_sets,
                         account_queue.task_done()
                         time.sleep(3)
                         break
-
-                    # Parse player data from response into the account.
-                    parse_account_stats(args, api, response_dict, account)
-
-                    # Perform player data cleanup and update statistics.
-                    cleanup_account_stats(account, args.pokestop_refresh_time)
 
                     parsed = parse_map(args, response_dict, step_location, dbq,
                                        whq, api, status, scan_date, account,
