@@ -661,18 +661,15 @@ def handle_pokestop(status, api, account, pokestop):
 
     time.sleep(random.uniform(2, 3))
     responses = request_fort_details(api, account, pokestop)
-    fort_details = responses.get('FORT_DETAILS', {})
 
-    if not fort_details:
+    if not responses.get('FORT_DETAILS', {}):
         status['message'] = (
             'Account {} failed to fetch Pokestop #{} details.').format(
                 account['username'], pokestop_id)
         log.error(status['message'])
         return False
 
-    fort_name = fort_details['name'].encode('utf-8', 'ignore').decode('utf-8')
-    status['message'] = 'Spinning Pokestop #{}: {}.'.format(
-        pokestop_id, fort_name)
+    status['message'] = 'Spinning Pokestop #{}.'.format(pokestop_id)
     log.info(status['message'])
 
     time.sleep(random.uniform(1.1, 2))
