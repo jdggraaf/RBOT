@@ -1349,7 +1349,7 @@ def map_request(api, account, position, no_jitter=False):
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings(hash=account['download_settings'])
+        # req.download_settings(hash=account['download_settings']['hash'])
         req.get_buddy_walked()
         response = req.call()
 
@@ -1383,7 +1383,7 @@ def gym_request(api, account, position, gym, api_version):
         req.get_hatched_eggs()
         req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings(hash=account['download_settings'])
+        # req.download_settings(hash=account['download_settings']['hash'])
         req.get_buddy_walked()
         response = req.call()
 
