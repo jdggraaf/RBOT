@@ -943,7 +943,6 @@ def search_worker_thread(args, account_queue, account_sets,
             # for stat purposes.
             consecutive_noitems = 0
 
-            # Create the API instance this will use.
             api = setup_api(args, status, account)
 
             # The forever loop for the searches.
