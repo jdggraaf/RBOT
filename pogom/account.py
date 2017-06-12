@@ -11,8 +11,7 @@ from pgoapi import PGoApi
 from pgoapi.exceptions import AuthException, BannedAccountException
 
 from .fakePogoApi import FakePogoApi
-from .utils import (generate_device_info, equi_rect_distance,
-                    parse_new_timestamp_ms)
+from .utils import generate_device_info, equi_rect_distance
 from .proxy import get_new_proxy
 
 log = logging.getLogger(__name__)
@@ -95,7 +94,7 @@ def check_login(args, account, api, position, proxy_url):
             account['banned'] = True
             log.error('Account %s is banned from Pokemon Go.',
                       account['username'])
-            break
+            return
         except AuthException:
             num_tries += 1
             log.error(
@@ -134,14 +133,13 @@ def check_login(args, account, api, position, proxy_url):
     old_config = account['remote_config']
     time.sleep(random.uniform(.5, 0.9))
     uint_app_version = int(args.api_version.replace('.', '0'))
-    response = request_download_settings(api, account, uint_app_version)
-    if not response or not parse_download_settings(account, response):
+    responses = request_download_settings(api, account, uint_app_version)
+    if not responses or not parse_download_settings(account, responses):
         if account['banned']:
-            log.warning('Account %s is probably banned.', account['username'])
-            raise InvalidLogin('Received status code 3: account is banned.')
+            return
         raise InvalidLogin('Unable to retrieve download settings hash.')
 
-    if not parse_inventory(api, account, response['responses']):
+    if not parse_inventory(api, account, responses):
         raise InvalidLogin('Unable to retrieve player inventory.')
 
     # 4 - Get Asset Digest request.
@@ -151,10 +149,11 @@ def check_login(args, account, api, position, proxy_url):
         result = 2
         page_offset = 0
         page_timestamp = 0
+        time.sleep(random.uniform(.7, 1.2))
         while result == 2:
+            log.debug('Getting asset digest - offset: %d.', page_offset)
             responses = request_get_asset_digest(
                 api, account, uint_app_version, page_offset, page_timestamp)
-            log.debug('Getting asset digest - offset: %d.', page_offset)
             if i > 2:
                 time.sleep(random.uniform(1.4, 1.6))
                 i = 0
@@ -176,9 +175,9 @@ def check_login(args, account, api, position, proxy_url):
         page_offset = 0
         page_timestamp = 0
         while result == 2:
+            log.debug('Downloading item templates - offset: %d.', page_offset)
             responses = request_download_item_templates(
                 api, account, page_offset, page_timestamp)
-            log.debug('Downloading item templates - offset: %d.', page_offset)
             if i > 2:
                 time.sleep(random.uniform(1.4, 1.6))
                 i = 0
@@ -415,15 +414,8 @@ def parse_get_player(account, responses):
     return False
 
 
-def parse_download_settings(account, response):
+def parse_download_settings(account, responses):
     try:
-        # Check if account is banned.
-        status_code = response['status_code']
-        if status_code == 3:
-            account['banned'] = True
-            return False
-
-        responses = response['responses']
         remote_config = responses['DOWNLOAD_REMOTE_CONFIG_VERSION']
         asset_time = remote_config['asset_digest_timestamp_ms'] / 1000000
         template_time = remote_config['item_templates_timestamp_ms'] / 1000
@@ -932,6 +924,33 @@ def release_pokemon(status, api, account, catch_id):
         return False
 
 
+# Parse status code and new timestamp from the API response.
+def parse_response(account, response, timestamp=True):
+    status_code = response.get('status_code', 0)
+    if status_code == 1:
+        responses = response['responses']
+        new_timestamp = responses.get(
+            'GET_INVENTORY', {}).get(
+            'inventory_delta', {}).get(
+            'new_timestamp_ms', 0)
+
+        if timestamp and not new_timestamp:
+            log.warning('Failed to parse new timestamp from API response.')
+        else:
+            account['last_timestamp_ms'] = new_timestamp
+
+        return responses
+    if status_code == 2:
+        return response['responses']
+
+    if status_code == 3:
+        account['banned'] = True
+
+    log.error('Account %s received a bad response from API (status code %d).',
+              account['username'], status_code)
+    return False
+
+
 # https://docs.pogodev.org/api/messages/GetPlayerProto/
 # https://docs.pogodev.org/api/messages/GetPlayerOutProto/
 def request_get_player(api, account, login=False, buddy=True):
@@ -951,9 +970,7 @@ def request_get_player(api, account, login=False, buddy=True):
                 req.get_buddy_walked()
         response = req.call()
 
-        if not login:
-            account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response, not login)
 
     except Exception as e:
         log.error('Exception getting player information: %s', repr(e))
@@ -978,8 +995,7 @@ def request_fort_details(api, account, pokestop):
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.error('Exception while fetching Pokestop details: %s.', repr(e))
@@ -1006,8 +1022,7 @@ def request_fort_search(api, account, pokestop, location):
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.error('Exception while searching Pokestop: %s.', repr(e))
@@ -1032,8 +1047,7 @@ def request_encounter(api, account, encounter_id, spawnpoint_id, location):
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response
+        return parse_response(account, response)
 
     except Exception as e:
         log.error('Exception while encountering Pokemon: %s.', repr(e))
@@ -1055,8 +1069,7 @@ def request_recycle_item(api, account, item_id, amount):
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.warning('Exception while dropping items: %s', repr(e))
@@ -1082,8 +1095,7 @@ def request_download_settings(api, account, app_version):
         req.download_settings()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response
+        return parse_response(account, response)
 
     except Exception as e:
         log.error('Exception while downloading app settings: %s.', repr(e))
@@ -1107,8 +1119,7 @@ def request_get_asset_digest(api, account, app_version, offset, timestamp):
         req.download_settings(hash=account['remote_config']['hash'])
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.error('Exception while getting asset digest: %s.', repr(e))
@@ -1130,8 +1141,7 @@ def request_download_item_templates(api, account, offset, timestamp):
         req.download_settings(hash=account['remote_config']['hash'])
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.error('Exception while downloading item templates: %s.', repr(e))
@@ -1152,8 +1162,7 @@ def request_get_player_profile(api, account, login=False):
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.warning('Exception while requesting player profile: %s', repr(e))
@@ -1176,8 +1185,7 @@ def request_level_up_rewards(api, account, login=False):
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.warning('Exception while requesting level up rewards: %s', repr(e))
@@ -1195,8 +1203,7 @@ def request_mark_tutorial_complete(api, account, tutorial):
         req.check_awarded_badges()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.warning('Exception while marking tutorial complete: %s', repr(e))
@@ -1226,8 +1233,7 @@ def request_catch_pokemon(api, account, encounter_id, spawnpoint_id, throw,
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.warning('Exception while catching Pokemon: %s', repr(e))
@@ -1253,8 +1259,7 @@ def request_use_item_encounter(api, account, encounter_id, spawnpoint_id,
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.warning('Exception while using a Berry on a Pokemon: %s', repr(e))
@@ -1279,8 +1284,7 @@ def request_release_pokemon(api, account, pokemon_id, release_ids=[]):
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.error('Exception while releasing Pokemon: %s', repr(e))
@@ -1305,8 +1309,7 @@ def request_use_item_egg_incubator(api, account, incubator_id, egg_id):
         req.get_buddy_walked()
         response = req.call()
 
-        account['last_timestamp_ms'] = parse_new_timestamp_ms(response)
-        return response['responses']
+        return parse_response(account, response)
 
     except Exception as e:
         log.warning('Exception while putting an egg in incubator: %s', repr(e))

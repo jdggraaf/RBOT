@@ -30,7 +30,7 @@ from . import config
 from .utils import (get_pokemon_name, get_pokemon_rarity, get_pokemon_types,
                     get_args, cellid, in_radius, date_secs, clock_between,
                     get_move_name, get_move_damage, get_move_energy,
-                    get_move_type, clear_dict_response, calc_pokemon_level)
+                    get_move_type, calc_pokemon_level)
 from .transform import transform_from_wgs_to_gcj, get_new_coords
 from .customLog import printPokemon
 from .account import (setup_api, check_login, request_encounter,
@@ -1943,10 +1943,10 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                          disappear_time)
 
             # Scan for IVs/CP and moves.
-            encounter_result = None
+            responses = None
             using_accountset = False
             if args.encounter and (pokemon_id in args.encounter_whitelist):
-                time.sleep(random.uniform(1.0, 2.5))
+                time.sleep(random.uniform(1.5, 2.5))
 
                 hlvl_account = None
                 hlvl_api = None
@@ -2013,8 +2013,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                         + ' is only level '
                                         + str(encounter_level) + '.')
 
-                    # Encounter Pokemon.
-                    encounter_result = request_encounter(
+                    # Make a Pokemon encounter request.
+                    responses = request_encounter(
                         hlvl_api,
                         hlvl_account,
                         p['encounter_id'],
@@ -2022,9 +2022,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         scan_location)
 
                     # Handle errors.
-                    if encounter_result:
-                        responses = encounter_result['responses']
-
+                    if responses:
                         # Check for captcha.
                         captcha_url = responses[
                             'CHECK_CHALLENGE']['challenge_url']
@@ -2052,12 +2050,11 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                 args, status, api, captcha_url, account,
                                 wh_update_queue):
                             # Retry encounter request.
-                            encounter_result = request_encounter(
+                            responses = request_encounter(
                                 hlvl_api,
                                 p['encounter_id'],
                                 p['spawn_point_id'],
                                 scan_location)
-                            responses = encounter_result['responses']
 
                         status_code = responses['ENCOUNTER'].get('status', 0)
                         if status_code == 8:
@@ -2074,10 +2071,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                       + ' Received a "%s" status response.',
                                       hlvl_account['username'],
                                       status_code)
-
-                        # Clear the response for memory management.
-                        encounter_result = clear_dict_response(
-                            encounter_result)
 
                     # We're done with the encounter. If it's from an
                     # AccountSet, release account back to the pool.
@@ -2112,16 +2105,14 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 pokemon[p['encounter_id']]['form'] = p['pokemon_data'][
                     'pokemon_display'].get('form', None)
 
-            if (encounter_result is not None and 'wild_pokemon'
-                    in encounter_result['responses']['ENCOUNTER']):
-                pokemon_info = encounter_result['responses'][
-                    'ENCOUNTER']['wild_pokemon']['pokemon_data']
+            if (responses and 'wild_pokemon' in responses['ENCOUNTER']):
+                p_data = responses['ENCOUNTER']['wild_pokemon']['pokemon_data']
 
                 # IVs.
-                iv_attack = pokemon_info.get('individual_attack', 0)
-                iv_defense = pokemon_info.get('individual_defense', 0)
-                iv_stamina = pokemon_info.get('individual_stamina', 0)
-                cp = pokemon_info.get('cp', None)
+                iv_attack = p_data.get('individual_attack', 0)
+                iv_defense = p_data.get('individual_defense', 0)
+                iv_stamina = p_data.get('individual_stamina', 0)
+                cp = p_data.get('cp', None)
 
                 # Logging: let the user know we succeeded.
                 log.debug('Encounter with account level %d for Pokemon ID %s'
@@ -2140,11 +2131,11 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     'individual_attack': iv_attack,
                     'individual_defense': iv_defense,
                     'individual_stamina': iv_stamina,
-                    'move_1': pokemon_info['move_1'],
-                    'move_2': pokemon_info['move_2'],
-                    'height': pokemon_info['height_m'],
-                    'weight': pokemon_info['weight_kg'],
-                    'cp_multiplier': pokemon_info['cp_multiplier']
+                    'move_1': p_data['move_1'],
+                    'move_2': p_data['move_2'],
+                    'height': p_data['height_m'],
+                    'weight': p_data['weight_kg'],
+                    'cp_multiplier': p_data['cp_multiplier']
                 })
 
                 # Only add CP if we're level 30+.
@@ -2154,22 +2145,20 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
             catch_enabled = account['level'] < args.account_max_level and (
                             pokemons_caught < 3)
             if catch_enabled and pokemon_id in args.pokemon_catch_list:
-
-                if using_accountset or encounter_result is None:
-                    time.sleep(random.uniform(1.0, 2.5))
-                    # Encounter Pokemon.
-                    encounter_result = request_encounter(
+                if using_accountset or not responses:
+                    time.sleep(random.uniform(1.9, 3.1))
+                    # Make a Pokemon encounter request.
+                    responses = request_encounter(
                         api,
                         account,
                         p['encounter_id'],
                         p['spawn_point_id'],
                         step_location)
-                    encounter_result = clear_dict_response(encounter_result)
                 try:
-                    responses = encounter_result['responses']
                     captcha_url = responses['CHECK_CHALLENGE']['challenge_url']
                     if len(captcha_url) > 1:
                         log.debug('Account encountered a reCaptcha.')
+                        raise Exception('Account has encountered reCaptcha.')
 
                     status_code = responses['ENCOUNTER'].get('status', 0)
                     if status_code == 8:
@@ -2177,12 +2166,15 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                   + ' Received Anti-Cheat response ('
                                   + 'a "%s" status response).',
                                   account['username'], status_code)
-                        raise Exception('Anti-Cheat response received.'
-                                        + ' Stopping account...')
-
+                        raise Exception('Encounter blocked by Anti-Cheat.')
+                    if status_code != 1:
+                        log.error('Account %s has failed a encounter.'
+                                  + ' Received a "%s" status response.',
+                                  account['username'],
+                                  status_code)
+                        raise Exception('Account failed pokemon encounter.')
                     w_pokemon = responses['ENCOUNTER'].get('wild_pokemon', {})
-                    if w_pokemon:
-                        pokemon_info = w_pokemon['pokemon_data']
+                    pokemon_info = w_pokemon['pokemon_data']
 
                     iv_attack = pokemon_info.get('individual_attack', 0)
                     iv_defense = pokemon_info.get('individual_defense', 0)
