@@ -13,6 +13,7 @@ from pgoapi.exceptions import AuthException, BannedAccountException
 from .fakePogoApi import FakePogoApi
 from .utils import generate_device_info, equi_rect_distance
 from .proxy import get_new_proxy
+from .transform import jitter_location, get_new_coords, calculate_bearing
 
 log = logging.getLogger(__name__)
 
@@ -582,8 +583,12 @@ def incubate_eggs(api, account):
             km_target = account['eggs'][egg_id]['km_target']
 
             time.sleep(random.uniform(2.0, 4.0))
-            responses = request_use_item_egg_incubator(api, account,
-                                                       incubator_id, egg_id)
+            responses = request_use_item_egg_incubator(
+                api, account, incubator_id, egg_id)
+
+            if not responses:
+                return False
+
             if parse_use_item_egg_incubator(account, responses):
                 message = (
                     'Egg #{} ({:.1f} km) is on incubator #{}.').format(
@@ -626,7 +631,11 @@ def recycle_items(status, api, account):
 
             time.sleep(random.uniform(3.0, 5.0))
             responses = request_recycle_item(api, account, item_id, drop_count)
-            recycle_item = responses['RECYCLE_INVENTORY_ITEM']
+
+            if not responses:
+                return False
+
+            recycle_item = responses.get('RECYCLE_INVENTORY_ITEM', {})
             if recycle_item.get('result', 0) > 0:
                 account['items'][item_id] = recycle_item['new_count']
                 status['message'] = 'Dropped items: {} {}.'.format(
@@ -641,31 +650,50 @@ def recycle_items(status, api, account):
     return True
 
 
-# TODO: Jitter player location
-def handle_pokestop(status, api, account, pokestop):
+def handle_pokestop(args, status, api, account, pokestop):
     pokestop_id = pokestop['id']
-    location = account['last_location']
+    location = (pokestop['latitude'], pokestop['longitude'])
 
-    if pokestop_id in account['used_pokestops']:
-        return False
+    bearing = calculate_bearing(location, account['last_location'])
+    new_coords = get_new_coords(location, 0.029, bearing)
+    new_location = (new_coords[0], new_coords[1], account['last_location'][2])
+    distance = equi_rect_distance(account['last_location'], new_location)
+
+    walk_time = distance / (args.kph / 3600.0)
+    start_time = time.time()
+
     if not recycle_items(status, api, account):
         return False
 
     time.sleep(random.uniform(2, 3))
     responses = request_fort_details(api, account, pokestop)
 
-    if not responses.get('FORT_DETAILS', {}):
+    if not responses or not responses.get('FORT_DETAILS', {}):
         status['message'] = (
             'Account {} failed to fetch Pokestop #{} details.').format(
                 account['username'], pokestop_id)
         log.error(status['message'])
         return False
 
-    status['message'] = 'Spinning Pokestop #{}.'.format(pokestop_id)
+    elapsed_time = time.time() - start_time
+    walk_time -= elapsed_time * 0.95
+    walk_time = max(walk_time, random.uniform(1.2, 2.0))
+
+    status['message'] = 'Visiting Pokestop #{} in {:.1f} seconds.'.format(
+        pokestop_id, walk_time)
     log.info(status['message'])
 
-    time.sleep(random.uniform(1.1, 2))
-    responses = request_fort_search(api, account, pokestop, location)
+    time.sleep(walk_time)
+
+    api.set_position(*new_location)
+    account['last_location'] = new_location
+
+    responses = request_fort_search(
+        api, account, pokestop, new_location, args.no_jitter)
+
+    if not responses:
+        return False
+
     fort_search = responses.get('FORT_SEARCH', {})
     result = fort_search.get('result', 0)
     if result != 1:
@@ -762,10 +790,9 @@ def randomize_throw(excellent=0.05, great=0.5, nice=0.3, curveball=0.8):
     return throw
 
 
-def catch_pokemon(status, api, account, pokemon, iv):
-    pokemon_id = pokemon['pokemon_data']['pokemon_id']
-    encounter_id = pokemon['encounter_id']
-    spawnpoint_id = pokemon['spawn_point_id']
+def catch_pokemon(status, api, account, encounter_id, pokemon):
+    pokemon_id = pokemon['pokemon_id']
+    spawnpoint_id = pokemon['spawnpoint_id']
 
     attempts = 0
     max_attempts = random.randint(3, 5)
@@ -776,7 +803,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
         if not ball:
             status['message'] = 'Account {} has no Pokeballs to throw.'.format(
                 account['username'])
-            log.warning(status['message'])
+            log.info(status['message'])
             return False
 
         if not used_berry:
@@ -796,20 +823,20 @@ def catch_pokemon(status, api, account, pokemon, iv):
 
                 responses = request_use_item_encounter(
                     api, account, encounter_id, spawnpoint_id, berry['id'])
+                if responses:
+                    use_item = responses.get('USE_ITEM_ENCOUNTER', {})
 
-                use_item = responses.get('USE_ITEM_ENCOUNTER', {})
-
-                if use_item.get('active_item', 0) == berry['id']:
-                    account['items'][berry['id']] -= 1
-                    status['message'] = (
-                        'Used a {} in encounter #{}.').format(
-                            berry['name'], encounter_id)
-                    log.debug(status['message'])
-                else:
-                    status['message'] = (
-                        'Unable to use {} in encounter #{}.').format(
-                            berry['name'], encounter_id)
-                    log.error(status['message'])
+                    if use_item.get('active_item', 0) == berry['id']:
+                        account['items'][berry['id']] -= 1
+                        status['message'] = (
+                            'Used a {} in encounter #{}.').format(
+                                berry['name'], encounter_id)
+                        log.debug(status['message'])
+                    else:
+                        status['message'] = (
+                            'Unable to use {} in encounter #{}.').format(
+                                berry['name'], encounter_id)
+                        log.error(status['message'])
 
         # Randomize throw.
         throw = randomize_throw()
@@ -822,8 +849,10 @@ def catch_pokemon(status, api, account, pokemon, iv):
         time.sleep(random.uniform(3, 5))
         responses = request_catch_pokemon(api, account, encounter_id,
                                           spawnpoint_id, throw, ball['id'])
-        account['session_throws'] += 1
+        if not responses:
+            return False
 
+        account['session_throws'] += 1
         catch_pokemon = responses.get('CATCH_POKEMON', {})
         catch_status = catch_pokemon.get('status', -1)
         if catch_status <= 0:
@@ -833,12 +862,12 @@ def catch_pokemon(status, api, account, pokemon, iv):
             log.error(status['message'])
             return False
         if catch_status == 1:
-            catch_id = catch_pokemon['captured_pokemon_id']
+            captured_pokemon_id = catch_pokemon['captured_pokemon_id']
             xp_awarded = sum(catch_pokemon['capture_award']['xp'])
 
             status['message'] = (
                 'Caught Pokemon #{} {} with {} and received {} XP').format(
-                    pokemon_id, catch_id, ball['name'], xp_awarded)
+                    pokemon_id, captured_pokemon_id, ball['name'], xp_awarded)
             log.info(status['message'])
 
             account['session_catches'] += 1
@@ -848,23 +877,7 @@ def catch_pokemon(status, api, account, pokemon, iv):
             # Parse Pokemons in response and update account inventory.
             parse_inventory(api, account, responses)
 
-            caught_pokemon = account['pokemons'].get(catch_id, None)
-            if not caught_pokemon:
-                log.error('Pokemon %s not found in inventory.', catch_id)
-                return False
-
-            # Don't release all Pokemon.
-            keep_pokemon = random.random()
-            if (iv > 80 and keep_pokemon < 0.65) or (
-                    iv > 91 and keep_pokemon < 0.95):
-                log.info('Kept Pokemon #%d (IV %d) in inventory (%d/%d).',
-                         pokemon_id, iv,
-                         len(account['pokemons']), account['max_pokemons'])
-                return caught_pokemon
-
-            release_pokemon(status, api, account, catch_id)
-            return caught_pokemon
-
+            return captured_pokemon_id
         if catch_status == 2:
             status['message'] = (
                 'Catch attempt {} failed. Pokemon #{} broke free.').format(
@@ -888,6 +901,40 @@ def catch_pokemon(status, api, account, pokemon, iv):
 
         attempts += 1
     return False
+
+
+def release_pokemons(status, api, account, release_ids):
+    total_pokemons = len(account['pokemons'])
+    max_pokemons = account['max_pokemons']
+
+    log.debug('Account %s inventory has %d / %d Pokemons.',
+              account['username'], total_pokemons, max_pokemons)
+
+    time.sleep(random.uniform(4, 6))
+
+    if len(release_ids) == 1:
+        responses = request_release_pokemon(api, account, release_ids[0])
+    else:
+        responses = request_release_pokemon(api, account, 0, release_ids)
+
+    if not responses:
+        return False
+
+    result = responses.get('RELEASE_POKEMON', {}).get('result', 0)
+
+    if result != 1:
+        status['message'] = 'Failed to release Pokemon {}: {}'.format(
+            release_ids, result)
+        log.warning(status['message'])
+        return False
+
+    status['message'] = 'Released Pokemon: {}'.format(release_ids)
+    log.info(status['message'])
+    # Update account inventory.
+    for p_id in release_ids:
+        account['pokemons'].pop(p_id, None)
+
+    return True
 
 
 def release_pokemon(status, api, account, catch_id):
@@ -1005,7 +1052,13 @@ def request_fort_details(api, account, pokestop):
 
 # https://docs.pogodev.org/api/messages/FortSearchProto/
 # https://docs.pogodev.org/api/messages/FortSearchOutProto
-def request_fort_search(api, account, pokestop, location):
+def request_fort_search(api, account, pokestop, position, no_jitter=False):
+    if no_jitter:
+        location = position
+    else:
+        location = jitter_location(position)
+        log.debug('Jittered fort search request to: %f/%f/%f',
+                  location[0], location[1], location[2])
     try:
         req = api.create_request()
         response = req.fort_search(
@@ -1030,7 +1083,14 @@ def request_fort_search(api, account, pokestop, location):
     return False
 
 
-def request_encounter(api, account, encounter_id, spawnpoint_id, location):
+def request_encounter(api, account, encounter_id, spawnpoint_id, position,
+                      no_jitter=False):
+    if no_jitter:
+        location = position
+    else:
+        location = jitter_location(position)
+        log.debug('Jittered encounter request to: %f/%f/%f',
+                  location[0], location[1], location[2])
     try:
         # Setup encounter request envelope.
         req = api.create_request()

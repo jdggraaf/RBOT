@@ -71,6 +71,23 @@ def get_new_coords(init_loc, distance, bearing):
     return (destination.latitude, destination.longitude)
 
 
+# Calculate the bearing between two points, in degrees.
+def calculate_bearing(start_pos, end_pos):
+    lat1 = math.radians(start_pos[0])
+    lat2 = math.radians(end_pos[0])
+    delta_lon = math.radians(end_pos[1] - start_pos[1])
+
+    y = math.sin(delta_lon) * math.cos(lat2)
+    x = math.cos(lat1) * math.sin(lat2) - (
+        math.sin(lat1) * math.cos(lat2) * math.cos(delta_lon))
+
+    bearing = math.atan2(y, x)
+
+    # Since atan2 returns a value between -180 and +180,
+    # we need to convert it to 0 - 360 degrees.
+    return (math.degrees(bearing) + 360) % 360
+
+
 # Apply a location jitter.
 def jitter_location(location=None, maxMeters=10):
     origin = geopy.Point(location[0], location[1])

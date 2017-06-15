@@ -43,12 +43,15 @@ from pgoapi import utilities as util
 from pgoapi.hash_server import (HashServer, BadHashRequestException,
                                 HashingOfflineException)
 from .models import (parse_map, GymDetails, parse_gyms, MainWorker,
-                     WorkerStatus, HashKeys)
-from .utils import now, clear_dict_response, parse_new_timestamp_ms
+                     WorkerStatus, HashKeys, Pokemon)
+from .utils import (now, clear_dict_response, parse_new_timestamp_ms,
+                    calc_pokemon_level)
 from .transform import get_new_coords, jitter_location
-from .account import (setup_api, check_login, reset_account,
-                      cleanup_account_stats, AccountSet)
-from .captcha import captcha_overseer_thread, handle_captcha
+from .account import (setup_api, check_login, reset_account, request_encounter,
+                      catch_pokemon, release_pokemons, cleanup_account_stats,
+                      handle_pokestop, AccountSet)
+from .captcha import (captcha_overseer_thread, handle_captcha,
+                      automatic_captcha_solve)
 from .proxy import get_new_proxy
 from .schedulers import KeyScheduler, SchedulerFactory
 
@@ -1092,6 +1095,7 @@ def search_worker_thread(args, account_queue, account_sets,
                 scan_date = datetime.utcnow()
                 response_dict = map_request(
                     api, account, step_location, args.no_jitter)
+                # Controls the sleep delay.
                 status['last_scan_date'] = datetime.utcnow()
 
                 # Record the time and the place that the worker made the
@@ -1139,6 +1143,7 @@ def search_worker_thread(args, account_queue, account_sets,
                                        account_sets, key_scheduler)
 
                     del response_dict
+
                     scheduler.task_done(status, parsed)
                     if parsed['count'] > 0:
                         status['success'] += 1
@@ -1167,6 +1172,49 @@ def search_worker_thread(args, account_queue, account_sets,
                         status['message'], repr(e)))
                     if response_dict is not None:
                         del response_dict
+
+                if parsed and parsed['encounters']:
+                    hlvl_account = None
+                    hlvl_api = None
+                    use_hlvl_accounts = False
+
+                    if account['level'] >= 30:
+                        hlvl_account = account
+                        hlvl_api = api
+                    else:
+                        hash_key = key_scheduler.next()
+
+                        hlvl = init_hlvl_account(args, status, account_sets,
+                                                 hash_key, step_location, whq)
+                        if hlvl:
+                            use_hlvl_accounts = True
+                            hlvl_account = hlvl[0]
+                            hlvl_api = hlvl[1]
+
+                    if hlvl_account and hlvl_api:
+
+                        result = process_encounters(
+                            args, status, hlvl_api, hlvl_account, dbq, whq,
+                            parsed['encounters'])
+                        if result:
+                            log.debug('High-level encounters succeded.')
+
+                    if use_hlvl_accounts:
+                        account_sets.release(hlvl_account)
+
+                # Try to capture wild Pokemon.
+                leveling = account['level'] < args.account_max_level
+
+                if leveling and parsed and parsed['pokemons']:
+                    result = process_pokemons(
+                        args, status, api, account, dbq, whq,
+                        parsed['pokemons'])
+
+                if leveling and parsed and parsed['pokestops']:
+                    result = process_pokestops(
+                        args, status, api, account, parsed['pokestops'])
+
+                status['last_scan_date'] = datetime.utcnow()
 
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:
@@ -1309,6 +1357,377 @@ def search_worker_thread(args, account_queue, account_sets,
                                      'last_fail_time': now(),
                                      'reason': 'exception'})
             time.sleep(args.scan_delay)
+
+
+def init_hlvl_account(args, status, account_sets, hash_key, location, whq):
+    account = account_sets.next('30', location)
+    if not account:
+        log.error('No high-level accounts available, consider adding more.')
+        return False
+
+    try:
+        if args.no_api_store:
+            api = setup_api(args, status, account)
+        else:
+            # Reuse API from account in AccountSet.
+            api = account.get('api', None)
+
+            if not api:
+                api = setup_api(args, status, account)
+                # Save API for this account.
+                account['api'] = api
+
+                if args.hash_key:
+                    api.activate_hash_server(hash_key)
+                    log.debug('High-level account %s using hashing key %s.',
+                              account['username'], hash_key)
+
+        # Set location.
+        api.set_position(*location)
+
+        # Log in.
+        check_login(args, account, api, location, status['proxy_url'])
+
+        # Verify if the account is at least level 30.
+        if account['level'] < 30:
+            # Mark the account so we don't try to use it anymore.
+            account['failed'] = True
+            log.error('Account %s is not an high-level account (level %d).',
+                      account['username'], account['level'])
+            return False
+
+        # Request Get Map Objects.
+        # TODO: Validate if encounter_id is present in GMO.
+        response = map_request(api, account, location, args.no_jitter)
+
+        account['last_active'] = datetime.utcnow()
+        account['last_location'] = location
+
+        if not response:
+            return False
+
+        # Check for captcha.
+        captcha_url = response['responses']['CHECK_CHALLENGE']['challenge_url']
+
+        if len(captcha_url) > 1:
+            if (args.captcha_solving and args.captcha_key and
+                automatic_captcha_solve(
+                    args, status, api, captcha_url, account, whq)):
+
+                # Retry Get Map Objects request.
+                response = map_request(api, account, location, args.no_jitter)
+            else:
+                # Throw warning and flag account.
+                account['failed'] = True
+                status['message'] = (
+                    'High-level account {} has encountered a reCaptcha.' +
+                    'Disabled account.').format(account['username'])
+                log.error(status['message'])
+
+                if args.webhooks:
+                    wh_message = {
+                        'status_name': args.status_name,
+                        'status': 'hlvl-encounter',
+                        'mode': 'disabled',
+                        'account': account['username'],
+                        'captcha': 1,
+                        'time': 0
+                        }
+                    whq.put(('captcha', wh_message))
+                return False
+
+        status = response['responses']['GET_MAP_OBJECTS'].get('status', 0)
+        if status == 1:
+            del response
+            return (account, api)
+
+        log.error('High-level account %s unable to get map objects.',
+                  account['username'])
+
+    except Exception as e:
+        log.error('Failed to initialize high-level account %s: %s',
+                  account['username'], repr(e))
+
+    return False
+
+
+def process_encounters(args, status, api, account, dbq, whq, encounters):
+    location = account['last_location']
+
+    encounter_ids = list(encounters.keys())
+    random.shuffle(encounter_ids)
+
+    for encounter_id in encounter_ids:
+        p = encounters[encounter_id][0]
+        wh_data = encounters[encounter_id][1]
+        pokemon_id = p['pokemon_id']
+
+        # Make a Pokemon encounter request.
+        time.sleep(random.uniform(2.5, 4))
+        responses = request_encounter(
+            api,
+            account,
+            encounter_id,
+            p['spawnpoint_id'],
+            location,
+            args.no_jitter)
+
+        if not responses:
+            status['message'] = (
+                'High-level account {} failed encounter #{}.').format(
+                    account['username'], encounter_id)
+            log.error(status['message'])
+            return False
+
+        # Check for captcha.
+        captcha_url = responses['CHECK_CHALLENGE']['challenge_url']
+
+        if len(captcha_url) > 1:
+            # We just did a GMO request without captcha. Bad luck...
+            status['message'] = (
+                'High-level account {} encountered a captcha.' +
+                'Skipping encounters.').format(account['username'])
+            log.warning(status['message'])
+            return False
+
+        result = responses['ENCOUNTER'].get('status', 0)
+        if result == 8:
+            # Flag account.
+            account['failed'] = True
+            status['message'] = (
+                'High-level account {} received an anti-cheat response ' +
+                '(status code: 8).').format(account['username'])
+            log.error(status['message'])
+            return False
+        elif result != 1:
+            status['message'] = (
+                'High-level account {} has failed a encounter. Response ' +
+                'status code: {}.').format(account['username'], result)
+            log.error(status['message'])
+            return False
+
+        if 'wild_pokemon' not in responses['ENCOUNTER']:
+            status['message'] = (
+                'High-level account {} has failed a encounter. Unable to ' +
+                'find wild pokemon in response.').format(account['username'])
+            log.error(status['message'])
+            return False
+
+        wild_pokemon = responses['ENCOUNTER']['wild_pokemon']
+        p_data = wild_pokemon['pokemon_data']
+
+        iv_attack = p_data.get('individual_attack', 0)
+        iv_defense = p_data.get('individual_defense', 0)
+        iv_stamina = p_data.get('individual_stamina', 0)
+        cp = p_data.get('cp', None)
+        cp_multiplier = p_data.get('cp_multiplier', None)
+
+        log.debug('High-level account %s encounter was successful. ' +
+                  'Pokemon ID %s at %s, %s has %s CP and %s/%s/%s IVs.',
+                  account['username'], p['pokemon_id'],
+                  p['latitude'], p['longitude'],
+                  cp, iv_attack, iv_defense, iv_stamina)
+
+        p.update({
+            'individual_attack': iv_attack,
+            'individual_defense': iv_defense,
+            'individual_stamina': iv_stamina,
+            'move_1': p_data['move_1'],
+            'move_2': p_data['move_2'],
+            'height': p_data['height_m'],
+            'weight': p_data['weight_kg'],
+            'cp': cp,
+            'cp_multiplier': cp_multiplier
+        })
+
+        # Send pokemon data to the webhooks.
+        if args.webhooks and (pokemon_id in args.webhook_whitelist or
+                              (not args.webhook_whitelist and pokemon_id
+                               not in args.webhook_blacklist)):
+            wh_data.update(p)
+            wh_data['pokemon_level'] = calc_pokemon_level(cp_multiplier)
+            wh_data['player_level'] = account['level']
+            whq.put(('pokemon', wh_data))
+        # Send Pokemon data to the database.
+        dbq.put((Pokemon, {0: p}))
+
+    return True
+
+
+def process_pokemons(args, status, api, account, dbq, whq, pokemons):
+    if (account['hour_throws'] > args.account_max_throws or
+            account['hour_catches'] > args.account_max_catches):
+        status['message'] = (
+            'Account {} has reached its Pokemon catching limits.').format(
+                account['username'])
+        log.info(status['message'])
+
+        return True
+
+    max_catches = random.randint(1, len(pokemons))
+    catches = 0
+    release_ids = []
+    location = account['last_location']
+
+    encounter_ids = list(pokemons.keys())
+    random.shuffle(encounter_ids)
+
+    for encounter_id in encounter_ids:
+        if catches >= max_catches:
+            break
+
+        p = pokemons[encounter_id][0]
+        wh_data = pokemons[encounter_id][1]
+        pokemon_id = p['pokemon_id']
+
+        # Make a Pokemon encounter request.
+        time.sleep(random.uniform(2.5, 4))
+        responses = request_encounter(
+            api,
+            account,
+            encounter_id,
+            p['spawnpoint_id'],
+            location,
+            args.no_jitter)
+
+        if not responses:
+            status['message'] = 'Account {} failed encounter #{}.'.format(
+                account['username'], encounter_id)
+            log.error(status['message'])
+            return False
+
+        # Check for captcha.
+        captcha_url = responses['CHECK_CHALLENGE']['challenge_url']
+
+        if len(captcha_url) > 1:
+            # We just did a GMO request without captcha. Bad luck...
+            status['message'] = (
+                'Account {} encountered a captcha. ' +
+                'Skipping catches.').format(account['username'])
+            log.warning(status['message'])
+            return False
+
+        result = responses['ENCOUNTER'].get('status', 0)
+        if result == 8:
+            # Flag account.
+            account['failed'] = True
+            status['message'] = (
+                'Account {} received an anti-cheat response ' +
+                '(status code: 8).').format(account['username'])
+            log.error(status['message'])
+            return False
+        elif result != 1:
+            status['message'] = (
+                'Account {} has failed a encounter. Response ' +
+                'status code: {}.').format(account['username'], result)
+            log.error(status['message'])
+            return False
+
+        if 'wild_pokemon' not in responses['ENCOUNTER']:
+            status['message'] = (
+                'High-level account {} has failed a encounter. Unable to ' +
+                'find wild pokemon in response.').format(account['username'])
+            log.error(status['message'])
+            return False
+
+        wild_pokemon = responses['ENCOUNTER']['wild_pokemon']
+        p_data = wild_pokemon['pokemon_data']
+
+        iv_attack = p_data.get('individual_attack', 0)
+        iv_defense = p_data.get('individual_defense', 0)
+        iv_stamina = p_data.get('individual_stamina', 0)
+
+        iv = int((iv_attack + iv_defense + iv_stamina) *
+                 100 / 45.0)
+
+        catch_id = catch_pokemon(status, api, account, encounter_id, p)
+
+        if catch_id:
+            catches += 1
+            caught_pokemon = account['pokemons'].get(catch_id, None)
+            if not caught_pokemon:
+                log.warning('Pokemon %s not found in inventory.', catch_id)
+                continue
+
+            if caught_pokemon['pokemon_id'] == 132:
+                status['message'] = (
+                    "Pokemon #{} {} transformed into a Ditto!").format(
+                        catch_id, pokemon_id)
+                log.info(status['message'])
+                # Update Pokemon information.
+                p.update({
+                    'pokemon_id': caught_pokemon['pokemon_id'],
+                    'move_1': caught_pokemon['move_1'],
+                    'move_2': caught_pokemon['move_2'],
+                    'height': caught_pokemon['height'],
+                    'weight': caught_pokemon['weight'],
+                    'gender': caught_pokemon['gender']
+                })
+                # Only add IVs and CP if we're level 30+.
+                if account['level'] >= 30:
+                    p.update({
+                        'individual_attack': iv_attack,
+                        'individual_defense': iv_defense,
+                        'individual_stamina': iv_stamina,
+                        'cp': caught_pokemon['cp'],
+                        'cp_multiplier': caught_pokemon['cp_multiplier']
+                    })
+                    wh_data['pokemon_level'] = calc_pokemon_level(
+                        caught_pokemon['cp_multiplier'])
+
+                # Send pokemon data to the webhooks.
+                if args.webhooks and (132 in args.webhook_whitelist or
+                                      (not args.webhook_whitelist and
+                                       132 not in args.webhook_blacklist)):
+                    wh_data.update(p)
+                    wh_data['player_level'] = account['level']
+                    whq.put(('pokemon', wh_data))
+
+                # Send Pokemon data to the database.
+                dbq.put((Pokemon, {0: p}))
+
+            # Don't release all Pokemon.
+            keep_pokemon = random.random()
+            if (iv > 80 and keep_pokemon < 0.70) or (
+                    iv > 91 and keep_pokemon < 0.95):
+                log.info('Kept Pokemon #%d (IV %d) in inventory (%d/%d).',
+                         caught_pokemon['pokemon_id'], iv,
+                         len(account['pokemons']), account['max_pokemons'])
+            else:
+                release_ids.append(catch_id)
+    if release_ids:
+        release_pokemons(status, api, account, release_ids)
+    return True
+
+
+def process_pokestops(args, status, api, account, pokestops):
+    if account['hour_spins'] > args.account_max_spins:
+        status['message'] = (
+            'Account {} has reached its Pokestop spinning limits.').format(
+                account['username'])
+        log.info(status['message'])
+
+        return True
+
+    max_spins = random.randint(1, len(pokestops))
+    spins = 0
+
+    pokestop_ids = list(pokestops.keys())
+    random.shuffle(pokestop_ids)
+
+    for pokestop_id in pokestop_ids:
+        if spins >= max_spins:
+            break
+
+        if pokestop_id in account['used_pokestops']:
+            continue
+
+        f = pokestops[pokestop_id]
+        result = handle_pokestop(args, status, api, account, f)
+        if result:
+            spins += 1
+
+    return True
 
 
 def upsertKeys(keys, key_scheduler, db_updates_queue):
