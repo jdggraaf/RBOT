@@ -1183,9 +1183,10 @@ def search_worker_thread(args, account_queue, account_sets,
                         hlvl_api = api
                     else:
                         hash_key = key_scheduler.next()
-
-                        hlvl = init_hlvl_account(args, status, account_sets,
-                                                 hash_key, step_location, whq)
+                        encounter_ids = parsed['encounters'].keys()
+                        hlvl = init_hlvl_account(
+                            args, status, account_sets, hash_key,
+                            step_location, encounter_ids, whq)
                         if hlvl:
                             use_hlvl_accounts = True
                             hlvl_account = hlvl[0]
@@ -1197,12 +1198,14 @@ def search_worker_thread(args, account_queue, account_sets,
                             args, status, hlvl_api, hlvl_account, dbq, whq,
                             parsed['encounters'])
                         if result:
-                            log.debug('High-level encounters succeded.')
+                            status['message'] = (
+                                'High-level account {} finished processing ' +
+                                'encounters.').format(account['username'])
+                            log.debug(status['message'])
 
                     if use_hlvl_accounts:
                         account_sets.release(hlvl_account)
 
-                # Try to capture wild Pokemon.
                 leveling = account['level'] < args.account_max_level
 
                 if leveling and parsed and parsed['pokemons']:
@@ -1214,7 +1217,7 @@ def search_worker_thread(args, account_queue, account_sets,
                     result = process_pokestops(
                         args, status, api, account, parsed['pokestops'])
 
-                status['last_scan_date'] = datetime.utcnow()
+                # status['last_scan_date'] = datetime.utcnow()
 
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:
@@ -1359,7 +1362,8 @@ def search_worker_thread(args, account_queue, account_sets,
             time.sleep(args.scan_delay)
 
 
-def init_hlvl_account(args, status, account_sets, hash_key, location, whq):
+def init_hlvl_account(args, status, account_sets, hash_key, location,
+                      encounter_ids, whq):
     account = account_sets.next('30', location)
     if not account:
         log.error('No high-level accounts available, consider adding more.')
@@ -1397,7 +1401,6 @@ def init_hlvl_account(args, status, account_sets, hash_key, location, whq):
             return False
 
         # Request Get Map Objects.
-        # TODO: Validate if encounter_id is present in GMO.
         response = map_request(api, account, location, args.no_jitter)
 
         account['last_active'] = datetime.utcnow()
@@ -1410,7 +1413,7 @@ def init_hlvl_account(args, status, account_sets, hash_key, location, whq):
         captcha_url = response['responses']['CHECK_CHALLENGE']['challenge_url']
 
         if len(captcha_url) > 1:
-            if (args.captcha_solving and args.captcha_key and
+            if args.captcha_solving and args.captcha_key and (
                 automatic_captcha_solve(
                     args, status, api, captcha_url, account, whq)):
 
@@ -1437,12 +1440,31 @@ def init_hlvl_account(args, status, account_sets, hash_key, location, whq):
                 return False
 
         status = response['responses']['GET_MAP_OBJECTS'].get('status', 0)
-        if status == 1:
-            del response
-            return (account, api)
+        if status != 1:
+            status['message'] = (
+                'High-level account {} unable to get map objects.').format(
+                    account['username'])
+            log.error(status['message'])
 
-        log.error('High-level account %s unable to get map objects.',
-                  account['username'])
+            return False
+
+        map_cells = response['responses']['GET_MAP_OBJECTS']['map_cells']
+        found = 0
+        for cell in map_cells:
+            wild_pokemons = cell.get('wild_pokemons', [])
+            for wild_pokemon in wild_pokemons:
+                if wild_pokemon['encounter_id'] in encounter_ids:
+                    found += 1
+
+        if len(encounter_ids) > found:
+            status['message'] = (
+                'High-level account {} unable to find {} encounters.').format(
+                    account['username'], len(encounter_ids) - found)
+            log.error(status['message'])
+            return False
+
+        del response
+        return (account, api)
 
     except Exception as e:
         log.error('Failed to initialize high-level account %s: %s',
