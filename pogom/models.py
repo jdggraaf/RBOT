@@ -1992,9 +1992,10 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
             pokemons[p['encounter_id']] = pokemon
 
             if webhooks:
-                wh_data.update(pokemon)
-                wh_data['player_level'] = account['level']
-                wh_update_queue.put(('pokemon', wh_data))
+                wh_poke = pokemon.copy()
+                wh_poke.update(wh_data)
+                wh_poke['player_level'] = account['level']
+                wh_update_queue.put(('pokemon', wh_poke))
 
     if forts and (config['parse_pokestops'] or config['parse_gyms']):
         if config['parse_pokestops']:

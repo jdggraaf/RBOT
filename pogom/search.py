@@ -1306,8 +1306,7 @@ def search_worker_thread(args, account_queue, account_sets,
                         log.debug(status['message'])
 
                         if gym_responses:
-                            parse_gyms(args, gym_responses,
-                                       whq, dbq)
+                            parse_gyms(args, gym_responses, whq, dbq)
                             del gym_responses
 
                 # Update hashing key stats in the database based on the values
@@ -1582,10 +1581,11 @@ def process_encounters(args, status, api, account, dbq, whq, encounters):
         if args.webhooks and (pokemon_id in args.webhook_whitelist or
                               (not args.webhook_whitelist and pokemon_id
                                not in args.webhook_blacklist)):
-            wh_data.update(p)
-            wh_data['pokemon_level'] = calc_pokemon_level(cp_multiplier)
-            wh_data['player_level'] = account['level']
-            whq.put(('pokemon', wh_data))
+            wh_poke = p.copy()
+            wh_poke.update(wh_data)
+            wh_poke['pokemon_level'] = calc_pokemon_level(cp_multiplier)
+            wh_poke['player_level'] = account['level']
+            whq.put(('pokemon', wh_poke))
         # Send Pokemon data to the database.
         dbq.put((Pokemon, {0: p}))
 
@@ -1718,9 +1718,10 @@ def process_pokemons(args, status, api, account, dbq, whq, pokemons):
                 if args.webhooks and (132 in args.webhook_whitelist or
                                       (not args.webhook_whitelist and
                                        132 not in args.webhook_blacklist)):
-                    wh_data.update(p)
-                    wh_data['player_level'] = account['level']
-                    whq.put(('pokemon', wh_data))
+                    wh_poke = p.copy()
+                    wh_poke.update(wh_data)
+                    wh_poke['player_level'] = account['level']
+                    whq.put(('pokemon', wh_poke))
 
                 # Send Pokemon data to the database.
                 dbq.put((Pokemon, {0: p}))
