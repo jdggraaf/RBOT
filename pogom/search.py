@@ -1173,6 +1173,9 @@ def search_worker_thread(args, account_queue, account_sets,
                     if response_dict is not None:
                         del response_dict
 
+                encounters_made = 0
+                catches_made = 0
+                spins_made = 0
                 if parsed and parsed['encounters']:
                     hlvl_account = None
                     hlvl_api = None
@@ -1198,6 +1201,7 @@ def search_worker_thread(args, account_queue, account_sets,
                             args, status, hlvl_api, hlvl_account, dbq, whq,
                             parsed['encounters'])
                         if result:
+                            encounters_made = result
                             status['message'] = (
                                 'High-level account {} finished processing ' +
                                 'encounters.').format(account['username'])
@@ -1212,10 +1216,14 @@ def search_worker_thread(args, account_queue, account_sets,
                     result = process_pokemons(
                         args, status, api, account, dbq, whq,
                         parsed['pokemons'])
+                    if result:
+                        catches_made = result
 
                 if leveling and parsed and parsed['pokestops']:
                     result = process_pokestops(
                         args, status, api, account, parsed['pokestops'])
+                    if result:
+                        spins_made = result
 
                 # status['last_scan_date'] = datetime.utcnow()
 
@@ -1337,11 +1345,20 @@ def search_worker_thread(args, account_queue, account_sets,
                 # Delay the desired amount after "scan" completion.
                 delay = scheduler.delay(status['last_scan_date'])
 
-                status['message'] += ' Sleeping {}s until {}.'.format(
-                    delay,
-                    time.strftime(
-                        '%H:%M:%S',
-                        time.localtime(time.time() + args.scan_delay)))
+                status['message'] = (
+                    'Work at {:6f},{:6f} processed {} finds: {} encounters, ' +
+                    '{} catches and {} spins. Sleeping {}s until {}.'
+                    ).format(step_location[0], step_location[1],
+                             parsed['count'],
+                             encounters_made,
+                             catches_made,
+                             spins_made,
+                             delay,
+                             time.strftime(
+                                 '%H:%M:%S',
+                                 time.localtime(time.time() + args.scan_delay)
+                             ))
+
                 log.info(status['message'])
                 time.sleep(delay)
 
@@ -1572,7 +1589,7 @@ def process_encounters(args, status, api, account, dbq, whq, encounters):
         # Send Pokemon data to the database.
         dbq.put((Pokemon, {0: p}))
 
-    return True
+    return len(encounters)
 
 
 def process_pokemons(args, status, api, account, dbq, whq, pokemons):
@@ -1583,9 +1600,9 @@ def process_pokemons(args, status, api, account, dbq, whq, pokemons):
                 account['username'])
         log.info(status['message'])
 
-        return True
+        return False
 
-    max_catches = random.randint(1, len(pokemons))
+    max_catches = random.randint(1, 4)
     catches = 0
     release_ids = []
     location = account['last_location']
@@ -1612,8 +1629,9 @@ def process_pokemons(args, status, api, account, dbq, whq, pokemons):
             args.no_jitter)
 
         if not responses:
-            status['message'] = 'Account {} failed encounter #{}.'.format(
-                account['username'], encounter_id)
+            status['message'] = (
+                'High-level account {} failed encounter #{}.').format(
+                    account['username'], encounter_id)
             log.error(status['message'])
             return False
 
@@ -1623,8 +1641,8 @@ def process_pokemons(args, status, api, account, dbq, whq, pokemons):
         if len(captcha_url) > 1:
             # We just did a GMO request without captcha. Bad luck...
             status['message'] = (
-                'Account {} encountered a captcha. ' +
-                'Skipping catches.').format(account['username'])
+                'High-level account {} encountered a captcha. ' +
+                'Skipping Pokemon catching.').format(account['username'])
             log.warning(status['message'])
             return False
 
@@ -1633,23 +1651,23 @@ def process_pokemons(args, status, api, account, dbq, whq, pokemons):
             # Flag account.
             account['failed'] = True
             status['message'] = (
-                'Account {} received an anti-cheat response ' +
+                'High-level account {} received an anti-cheat response ' +
                 '(status code: 8).').format(account['username'])
             log.error(status['message'])
             return False
         elif result != 1:
             status['message'] = (
-                'Account {} has failed a encounter. Response ' +
+                'High-level account {} has failed a encounter. Response ' +
                 'status code: {}.').format(account['username'], result)
             log.error(status['message'])
-            return False
+            continue
 
         if 'wild_pokemon' not in responses['ENCOUNTER']:
             status['message'] = (
                 'High-level account {} has failed a encounter. Unable to ' +
-                'find wild pokemon in response.').format(account['username'])
+                'find pokemon data in response.').format(account['username'])
             log.error(status['message'])
-            return False
+            continue
 
         wild_pokemon = responses['ENCOUNTER']['wild_pokemon']
         p_data = wild_pokemon['pokemon_data']
@@ -1718,7 +1736,7 @@ def process_pokemons(args, status, api, account, dbq, whq, pokemons):
                 release_ids.append(catch_id)
     if release_ids:
         release_pokemons(status, api, account, release_ids)
-    return True
+    return catches
 
 
 def process_pokestops(args, status, api, account, pokestops):
@@ -1728,7 +1746,7 @@ def process_pokestops(args, status, api, account, pokestops):
                 account['username'])
         log.info(status['message'])
 
-        return True
+        return False
 
     max_spins = random.randint(1, len(pokestops))
     spins = 0
@@ -1748,7 +1766,7 @@ def process_pokestops(args, status, api, account, pokestops):
         if result:
             spins += 1
 
-    return True
+    return spins
 
 
 def upsertKeys(keys, key_scheduler, db_updates_queue):
