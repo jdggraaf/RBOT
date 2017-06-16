@@ -1204,7 +1204,7 @@ def search_worker_thread(args, account_queue, account_sets,
                             encounters_made = result
                             status['message'] = (
                                 'High-level account {} finished processing ' +
-                                'encounters.').format(account['username'])
+                                'encounters.').format(hlvl_account['username'])
                             log.debug(status['message'])
 
                     if use_hlvl_accounts:
