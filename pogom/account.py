@@ -22,10 +22,6 @@ class TooManyLoginAttempts(Exception):
     pass
 
 
-class InvalidLogin(Exception):
-    pass
-
-
 # Create the API object that'll be used to scan.
 def setup_api(args, status, account):
     # Create the API instance this will use.
@@ -90,7 +86,10 @@ def check_login(args, account, api, position, proxy_url):
                     provider=account['auth_service'],
                     username=account['username'],
                     password=account['password'])
-            break
+
+            if app_login(args, account, api, position):
+                break
+
         except BannedAccountException:
             account['banned'] = True
             log.error('Account %s is banned from Pokemon Go.',
@@ -98,10 +97,9 @@ def check_login(args, account, api, position, proxy_url):
             return
         except AuthException:
             num_tries += 1
-            log.error(
-                ('Failed to login to Pokemon Go with account %s. ' +
-                 'Trying again in %g seconds.'),
-                account['username'], args.login_delay)
+            log.error('Failed to login to Pokemon Go with account %s. ' +
+                      'Trying again in %g seconds.',
+                      account['username'], args.login_delay)
             time.sleep(args.login_delay)
 
     if num_tries > args.login_retries:
@@ -111,21 +109,30 @@ def check_login(args, account, api, position, proxy_url):
             account['username'], num_tries)
         raise TooManyLoginAttempts('Exceeded login attempts.')
 
+    # Incubate eggs on available incubators.
+    time.sleep(random.uniform(1, 2))
+    incubate_eggs(api, account)
+
+    log.debug('Login with account %s was successful.', account['username'])
+    time.sleep(random.uniform(12, 17))
+
+
+def app_login(args, account, api, position):
     # 1 - Make an empty request to mimick real app behavior.
     try:
         time.sleep(random.uniform(1.7, 2.9))
         request = api.create_request()
         request.call()
     except Exception as e:
-        log.error('Login for account %s failed. Exception in call request: %s',
+        log.error('Exception making first login request on account %s: %s',
                   account['username'], repr(e))
-        raise InvalidLogin('Unable to make first empty request.')
+        return False
 
     # 2 - Get Player request.
     time.sleep(random.uniform(.6, 1.1))
     responses = request_get_player(api, account, True)
     if not responses or not parse_get_player(account, responses):
-        raise InvalidLogin('Unable to get player information.')
+        return False
 
     if account['warning']:
         log.warning('Account %s has received a warning.', account['username'])
@@ -136,25 +143,26 @@ def check_login(args, account, api, position, proxy_url):
     uint_app_version = int(args.api_version.replace('.', '0'))
     responses = request_download_settings(api, account, uint_app_version)
     if not responses or not parse_download_settings(account, responses):
-        if account['banned']:
-            return
-        raise InvalidLogin('Unable to retrieve download settings hash.')
+        return False
 
     if not parse_inventory(api, account, responses):
-        raise InvalidLogin('Unable to retrieve player inventory.')
+        return False
 
     # 4 - Get Asset Digest request.
     config = account['remote_config']
-    if config['asset_time'] > old_config.get('asset_time', 0):
+
+    if args.login_app_simulation and (
+            config['asset_time'] > old_config.get('asset_time', 0)):
+        req_count = 0
         i = random.randint(0, 3)
         result = 2
         page_offset = 0
         page_timestamp = 0
         time.sleep(random.uniform(.7, 1.2))
         while result == 2:
-            log.debug('Getting asset digest - offset: %d.', page_offset)
             responses = request_get_asset_digest(
                 api, account, uint_app_version, page_offset, page_timestamp)
+            req_count += 1
             if i > 2:
                 time.sleep(random.uniform(1.4, 1.6))
                 i = 0
@@ -168,17 +176,20 @@ def check_login(args, account, api, position, proxy_url):
                 page_timestamp = response['timestamp_ms']
             except KeyError:
                 break
+        log.debug('Completed %d requests to get asset digest.', req_count)
 
     # 5 - Download Item Templates request.
-    if config['template_time'] > old_config.get('template_time', 0):
+    if args.login_app_simulation and (
+            config['template_time'] > old_config.get('template_time', 0)):
+        req_count = 0
         i = random.randint(0, 3)
         result = 2
         page_offset = 0
         page_timestamp = 0
         while result == 2:
-            log.debug('Downloading item templates - offset: %d.', page_offset)
             responses = request_download_item_templates(
                 api, account, page_offset, page_timestamp)
+            req_count += 1
             if i > 2:
                 time.sleep(random.uniform(1.4, 1.6))
                 i = 0
@@ -192,6 +203,8 @@ def check_login(args, account, api, position, proxy_url):
                 page_timestamp = response['timestamp_ms']
             except KeyError:
                 break
+        log.debug('Completed %d requests to download item templates.',
+                  req_count)
 
     # Check tutorial completion.
     if not all(x in account['tutorials'] for x in (0, 1, 3, 4, 7)):
@@ -203,9 +216,9 @@ def check_login(args, account, api, position, proxy_url):
     # 6 - Get Player Profile request.
     time.sleep(random.uniform(.6, 1.1))
     if not request_get_player_profile(api, account, True):
-        log.warning('Account %s failed to retrieve player profile.',
-                    account['username'])
-        raise InvalidLogin('Unable to retrieve player profile.')
+        log.error('Account %s failed to retrieve player profile.',
+                  account['username'])
+        return False
 
     # 7 - Check if there are level up rewards to claim.
     time.sleep(random.uniform(.4, .7))
@@ -214,7 +227,7 @@ def check_login(args, account, api, position, proxy_url):
     if not parse_level_up_rewards(api, account, responses):
         log.warning('Account %s failed to collect level up rewards.',
                     account['username'])
-        raise InvalidLogin('Unable to verify player level up rewards.')
+        return False
 
     '''
     # 8 - Make an empty request to retrieve store items.
@@ -226,13 +239,9 @@ def check_login(args, account, api, position, proxy_url):
     except Exception as e:
         log.error('Failed to get store items for account %s: %s',
                   account['username'], repr(e))
-        raise InvalidLogin('Unable to request store items.')
+        return False
     '''
-    # Incubate eggs on available incubators.
-    incubate_eggs(api, account)
-
-    log.debug('Login with account %s was successful.', account['username'])
-    time.sleep(random.uniform(12, 17))
+    return True
 
 
 # Complete minimal tutorial steps.

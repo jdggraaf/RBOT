@@ -207,6 +207,10 @@ def get_args():
                         help=('Number of times to retry the login before ' +
                               'refreshing a thread.'),
                         type=int, default=3)
+    parser.add_argument('-las', '--login-app-simulation',
+                        help=('Mimick real app login flow. Requires up to ' +
+                              '25 extra requests to be made during login.'),
+                        action='store_true', default=True)
     parser.add_argument('-mf', '--max-failures',
                         help=('Maximum number of failures to parse ' +
                               'locations before an account will go into a ' +
