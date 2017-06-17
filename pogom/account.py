@@ -89,6 +89,10 @@ def check_login(args, account, api, position, proxy_url):
 
             if app_login(args, account, api, position):
                 break
+            else:
+                if account['banned']:
+                    return
+                num_tries += 1
 
         except BannedAccountException:
             account['banned'] = True
