@@ -233,7 +233,6 @@ def app_login(args, account, api, position):
                     account['username'])
         return False
 
-    '''
     # 8 - Make an empty request to retrieve store items.
     try:
         time.sleep(random.uniform(.6, 1.1))
@@ -244,7 +243,7 @@ def app_login(args, account, api, position):
         log.error('Failed to get store items for account %s: %s',
                   account['username'], repr(e))
         return False
-    '''
+
     return True
 
 
@@ -1087,6 +1086,7 @@ def request_fort_search(api, account, pokestop, position, no_jitter=False):
         req.check_awarded_badges()
         # req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
+        req.get_inbox(is_history=True)
         response = req.call()
 
         return parse_response(account, response)
@@ -1119,6 +1119,7 @@ def request_encounter(api, account, encounter_id, spawnpoint_id, position,
         req.check_awarded_badges()
         # req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
+        req.get_inbox(is_history=True)
         response = req.call()
 
         return parse_response(account, response)
@@ -1234,9 +1235,10 @@ def request_get_player_profile(api, account, login=False):
         if login:
             req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
-        req.get_inbox(is_history=True)
+        if not login:
+            req.get_inbox(is_history=True)
         response = req.call()
-        
+
         return parse_response(account, response)
 
     except Exception as e:
@@ -1258,6 +1260,7 @@ def request_level_up_rewards(api, account, login=False):
         if login:
             req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
+        req.get_inbox(is_history=True)
         response = req.call()
 
         return parse_response(account, response)
@@ -1306,6 +1309,7 @@ def request_catch_pokemon(api, account, encounter_id, spawnpoint_id, throw,
         req.check_awarded_badges()
         # req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
+        req.get_inbox(is_history=True)
         response = req.call()
 
         return parse_response(account, response)
@@ -1332,6 +1336,7 @@ def request_use_item_encounter(api, account, encounter_id, spawnpoint_id,
         req.check_awarded_badges()
         # req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
+        req.get_inbox(is_history=True)
         response = req.call()
 
         return parse_response(account, response)
@@ -1357,6 +1362,7 @@ def request_release_pokemon(api, account, pokemon_id, release_ids=[]):
         req.check_awarded_badges()
         # req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
+        req.get_inbox(is_history=True)
         response = req.call()
 
         return parse_response(account, response)
@@ -1382,6 +1388,7 @@ def request_use_item_egg_incubator(api, account, incubator_id, egg_id):
         req.check_awarded_badges()
         # req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
+        req.get_inbox(is_history=True)
         response = req.call()
 
         return parse_response(account, response)
