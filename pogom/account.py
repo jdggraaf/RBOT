@@ -1053,6 +1053,7 @@ def request_fort_details(api, account, pokestop):
         req.check_awarded_badges()
         # req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
+        req.get_inbox(is_history=True)
         response = req.call()
 
         return parse_response(account, response)
@@ -1233,8 +1234,9 @@ def request_get_player_profile(api, account, login=False):
         if login:
             req.download_settings(hash=account['remote_config']['hash'])
         req.get_buddy_walked()
+        req.get_inbox(is_history=True)
         response = req.call()
-
+        
         return parse_response(account, response)
 
     except Exception as e:
