@@ -1528,15 +1528,7 @@ def process_encounters(args, status, api, account, dbq, whq, encounters):
             return False
 
         result = responses['ENCOUNTER'].get('status', 0)
-        if result == 8:
-            # Flag account.
-            account['failed'] = True
-            status['message'] = (
-                'High-level account {} received an anti-cheat response ' +
-                '(status code: 8).').format(account['username'])
-            log.error(status['message'])
-            return False
-        elif result != 1:
+        if result != 1:
             status['message'] = (
                 'High-level account {} has failed a encounter. Response ' +
                 'status code: {}.').format(account['username'], result)
@@ -1630,7 +1622,7 @@ def process_pokemons(args, status, api, account, dbq, whq, pokemons):
 
         if not responses:
             status['message'] = (
-                'High-level account {} failed encounter #{}.').format(
+                'Account {} failed encounter #{}.').format(
                     account['username'], encounter_id)
             log.error(status['message'])
             return False
@@ -1641,30 +1633,22 @@ def process_pokemons(args, status, api, account, dbq, whq, pokemons):
         if len(captcha_url) > 1:
             # We just did a GMO request without captcha. Bad luck...
             status['message'] = (
-                'High-level account {} encountered a captcha. ' +
+                'Account {} encountered a captcha. ' +
                 'Skipping Pokemon catching.').format(account['username'])
             log.warning(status['message'])
             return False
 
         result = responses['ENCOUNTER'].get('status', 0)
-        if result == 8:
-            # Flag account.
-            account['failed'] = True
+        if result != 1:
             status['message'] = (
-                'High-level account {} received an anti-cheat response ' +
-                '(status code: 8).').format(account['username'])
-            log.error(status['message'])
-            return False
-        elif result != 1:
-            status['message'] = (
-                'High-level account {} has failed a encounter. Response ' +
+                'Account {} has failed a encounter. Response ' +
                 'status code: {}.').format(account['username'], result)
             log.error(status['message'])
             continue
 
         if 'wild_pokemon' not in responses['ENCOUNTER']:
             status['message'] = (
-                'High-level account {} has failed a encounter. Unable to ' +
+                'Account {} has failed a encounter. Unable to ' +
                 'find pokemon data in response.').format(account['username'])
             log.error(status['message'])
             continue
