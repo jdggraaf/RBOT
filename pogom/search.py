@@ -430,8 +430,15 @@ def account_recycler(args, accounts_queue, account_failures):
 
         # Search through the list for any item that last failed before
         # -ari/--account-rest-interval seconds.
-        ok_time = now() - args.account_rest_interval
         for a in failed_temp:
+            rest_interval = args.account_rest_interval
+            fail_reason = a['reason']
+            if 'exception' in fail_reason:
+                rest_interval = rest_interval * 0.1
+            elif 'banned' in fail_reason:
+                rest_interval = rest_interval * 10
+
+            ok_time = time.time() - rest_interval
             if a['last_fail_time'] <= ok_time:
                 # Remove the account from the real list, and add to the account
                 # queue.
