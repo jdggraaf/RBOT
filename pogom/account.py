@@ -172,13 +172,14 @@ def app_login(args, account, api, position):
             else:
                 i += 1
                 time.sleep(random.uniform(.3, .5))
-            try:
-                response = responses['GET_ASSET_DIGEST']
-                result = response['result']
-                page_offset = response['page_offset']
-                page_timestamp = response['timestamp_ms']
-            except KeyError:
-                break
+            if responses:
+                try:
+                    response = responses['GET_ASSET_DIGEST']
+                    result = response['result']
+                    page_offset = response['page_offset']
+                    page_timestamp = response['timestamp_ms']
+                except KeyError:
+                    break
         log.debug('Completed %d requests to get asset digest.', req_count)
 
     # 5 - Download Item Templates request.
@@ -199,13 +200,14 @@ def app_login(args, account, api, position):
             else:
                 i += 1
                 time.sleep(random.uniform(.3, .5))
-            try:
-                response = responses['DOWNLOAD_ITEM_TEMPLATES']
-                result = response['result']
-                page_offset = response['page_offset']
-                page_timestamp = response['timestamp_ms']
-            except KeyError:
-                break
+            if responses:
+                try:
+                    response = responses['DOWNLOAD_ITEM_TEMPLATES']
+                    result = response['result']
+                    page_offset = response['page_offset']
+                    page_timestamp = response['timestamp_ms']
+                except KeyError:
+                    break
         log.debug('Completed %d requests to download item templates.',
                   req_count)
 
@@ -545,7 +547,8 @@ def parse_inventory(api, account, responses):
                      account['username'], account['level'])
             time.sleep(random.uniform(1.7, 2.5))
             responses = request_level_up_rewards(api, account)
-            if not parse_level_up_rewards(api, account, responses):
+            if not responses or not parse_level_up_rewards(api, account,
+                                                           responses):
                 log.warning('Account %s failed to collect level up rewards.',
                             account['username'])
 
