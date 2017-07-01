@@ -154,7 +154,7 @@ def app_login(args, account, api, position):
     # 4 - Get Asset Digest request.
     config = account['remote_config']
 
-    if args.no_login_asset_download and (
+    if not args.no_login_asset_download and (
             config['asset_time'] > old_config.get('asset_time', 0)):
         req_count = 0
         i = random.randint(0, 3)
@@ -183,7 +183,7 @@ def app_login(args, account, api, position):
         log.debug('Completed %d requests to get asset digest.', req_count)
 
     # 5 - Download Item Templates request.
-    if args.no_login_asset_download and (
+    if not args.no_login_asset_download and (
             config['template_time'] > old_config.get('template_time', 0)):
         req_count = 0
         i = random.randint(0, 3)
