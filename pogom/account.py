@@ -57,13 +57,11 @@ def setup_api(args, status, account):
 
 
 # Use API to check the login status, and retry the login if possible.
-# Request GET_PLAYER data to ensure that account is working.
-# Request LEVEL_UP_REWARDS to accept account level up rewards.
 def check_login(args, account, api, position, proxy_url):
-
     # Logged in? Enough time left? Cool!
     if api._auth_provider and api._auth_provider._ticket_expire:
         remaining_time = api._auth_provider._ticket_expire / 1000 - time.time()
+
         if remaining_time > 60:
             log.debug(
                 'Credentials remain valid for another %f seconds.',
@@ -72,6 +70,7 @@ def check_login(args, account, api, position, proxy_url):
 
     # Try to login. Repeat a few times, but don't get stuck here.
     num_tries = 0
+
     # One initial try + login_retries.
     while num_tries < (args.login_retries + 1):
         try:
