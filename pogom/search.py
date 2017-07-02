@@ -1288,6 +1288,12 @@ def search_worker_thread(args, account_queue, account_sets,
                             response = gym_request(api, account, step_location,
                                                    gym, args.api_version)
 
+                            # Increment which gym we're on for status messages.
+                            current_gym += 1
+
+                            if not response:
+                                continue
+
                             # Make sure the gym was in range. (Sometimes the
                             # API gets cranky about gyms that are ALMOST 1km
                             # away.)
@@ -1302,8 +1308,6 @@ def search_worker_thread(args, account_queue, account_sets,
                                 gym_responses[gym['gym_id']] = response[
                                     'responses']['GYM_GET_INFO']
                             del response
-                            # Increment which gym we're on for status messages.
-                            current_gym += 1
 
                         status['message'] = (
                             'Processing details of {} gyms for location ' +
